@@ -4,7 +4,7 @@
 #define CACHESIZE 15000
 #include <setjmp.h>
 #include <signal.h>
-#include "RIVtools.h"
+#include "../RIVtools.h"
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -20,7 +20,7 @@ void readdirContingency(int sigNumber);
 jmp_buf readdirRecov;
 int main(int argc, char *argv[]){
 	clock_t begintotal = clock();
-	lexOpen("/home/drbob/Documents/lexicon");
+	lexOpen("lexicon");
 	char pathString[1000];
 	strcpy(pathString, argv[1]);
 	strcat(pathString, "/");

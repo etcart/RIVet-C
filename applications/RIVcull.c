@@ -2,12 +2,8 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <time.h>
-
-#define RIVSIZE 25000
-#define CACHESIZE 0
-#define NONZEROS 2
 #define THRESHOLD 0.70
-#include "RIVtools.h"
+#include "../RIVtools.h"
 
 
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
@@ -15,7 +11,6 @@ void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
 int main(int argc, char *argv[]){
 	clock_t begintotal = clock();
 	int fileCount = 0;
-	//RIVInit();
 	sparseRIV *fileRIVs = (sparseRIV*) malloc(1*sizeof(sparseRIV));
 	char rootString[2000];
 	if(argc <2){ 

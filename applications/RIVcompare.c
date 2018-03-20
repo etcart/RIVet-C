@@ -1,11 +1,16 @@
 #include <stdio.h>
-#include "RIVtools.h"
+#include "../RIVtools.h"
 #include <dirent.h>
 #include <sys/types.h>
 int main(){
 
-	lexOpen("/home/drbob/Documents/lexicon");
+	lexOpen("lexicon/");
 	FILE *wordList = fopen("wordList.txt", "r");
+	if(!wordList){
+		puts("feed me a list of the words in your lexicon");
+		return 1;
+	}
+	
 	char word[100];
 	denseRIV accept;
 	sparseRIV analyzefloor;

@@ -40,7 +40,7 @@ sparseRIV wordtoL2(char* word);
 
 /* converts an implicit RIV (a set of unvalued locations) into a formal 
  * sparse RIV.  this chooses the best method to perform the consolidation
- * and launches that function */
+ * and launches that function   defunct right now for memory usage reasons*/
 sparseRIV consolidateI2S(int *implicit, size_t valueCount);
 
 sparseRIV normalizeFloored(denseRIV input, int factor);
@@ -51,6 +51,8 @@ sparseRIV normalize(denseRIV input, int factor);
 int roundMultiply(int base, float divisor);
 /* like fileToL2 but takes a block of text */
 sparseRIV text2L2(char *text);
+
+/* calculates the magnitude of a sparseVector */ //TODO contain integer overflow in square process
 double getMagnitudeSparse(sparseRIV input);
 
 sparseRIV text2L2(char *text){
@@ -174,7 +176,7 @@ sparseRIV fileToL2Clean(FILE *data){
 	output.boolean = 1;
 	return output;
 }
-
+//defunct temporarily, might make a return
 /*sparseRIV consolidateI2S(int *implicit, size_t valueCount){
 	if(valueCount<RIVKey.I2SThreshold){
 		 //direct method is faster on small datasets, but has geometric scaling on large datasets 
