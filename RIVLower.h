@@ -42,6 +42,7 @@
 #error "CACHESIZE cannot be a negative number"
 #endif
 
+/* the size of the tempBlock used in consolidation and implicit RIVs */
 #define TEMPSIZE 3*RIVSIZE
 
 /* the sparseRIV is a RIV form optimized for RIVs that will be mostly 0s
@@ -75,11 +76,9 @@ typedef struct{
 	int *contextSize;
 }denseRIV;
 
-/*RIVKey, holds globally important data that should not be changed partway through
-* first function call in the program should always be: 
-* RIVinit();
-* this will set these variables, check for incompatible choices, and open up 
-* memory blocks which the system will use in the background
+/*RIVKey, holds global variables used under the hood, primarily for the lexicon
+ * it also holds a "temp block" that will be used by the dense to sparse 
+ * conversion and implicit RIV aggregation 
 */
 struct RIVData{
 	int h_tempBlock[TEMPSIZE];
@@ -88,28 +87,26 @@ struct RIVData{
 	denseRIV RIVCache[CACHESIZE];
 }static RIVKey;
 
-/* RIVOpen should be the first function called in any usage of this library
- * it sets global variables that practically all functions will reference,
- * it checks that your base parameters are valid, and allocates memory for
- * the functions to use, so that we can move fast with rare allocations.
+/* lexOpen is called to "open the lexicon", setting up for later calls to
+ * lexPush and lexPull. if the lexicon has not been opened before calls
+ * to these functions, their behavior can be unpredictable, most likely crashing
  */
-void RIVOpen();
+void lexOpen();
 
-/* RIVCleanup should always be called to close a RIV program.  it frees 
- * blocks allocated by RIVinit, and dumps the cached data to appropriate lexicon files
+/* lexClose should always be called after the last lex push or lex pull call
+ * if the lexicon is left open, some vector data may be lost due to 
+ * un-flushed RIV cache
  */
-void RIVClose();
+void lexClose();
 
 /*consolidateD2S takes a denseRIV value-set input, and returns a sparse RIV with
  * all 0s removed. it does not automatically carry metadata, which must be assigned
  * to a denseRIV after the fact.  often denseRIVs are only temporary, and don't
- * need to carry metadata
+ * contain any metadata
  */
 sparseRIV consolidateD2S(int *denseInput);  //#TODO fix int*/denseRIV confusion
 
-/* mapS2D expands a sparseRIV out to denseRIV values, filling array locations
- * based on location-value pairs 
- */
+
 
 
 /* makeSparseLocations must be called repeatedly in the processing of a 
@@ -120,12 +117,17 @@ sparseRIV consolidateD2S(int *denseInput);  //#TODO fix int*/denseRIV confusion
 void makeSparseLocations(unsigned char* word,  int *seeds, size_t seedCount);
 
 /* fLexPush pushes the data contained in a denseRIV out to a lexicon file,
- * saving it for long-term aggregation.  function is called by "lexpush",
+ * saving it for long-term aggregation.  function is called by "lexPush",
  * which is what users should actually use.  lexPush, unlike fLexPush,
  * has cache logic under the hood for speed and harddrive optimization
  */
 int fLexPush(denseRIV RIVout);
 
+/* flexPull pulls data directly from a file and converts it (if necessary)
+ * to a denseRIV.  function is called by "lexPull" which is what users 
+ * should actually use.  lexPull, unlike FlexPull, has cache logic under
+ * the hood for speed and harddrive optimization 
+ */
 denseRIV fLexPull(FILE* lexWord);
 
 /* creates a standard seed from the characters in a word, hopefully unique */
@@ -137,13 +139,31 @@ int wordtoSeed(unsigned char* word);
  */
 int* mapI2D(int *locations, size_t seedCount);
 
+/* highly optimized method for adding vectors.  there is no method 
+ * included for adding D2D or S2S, as this system is faster-enough
+ * to be more than worth using
+ */
 int* addS2D(int* destination, sparseRIV input);
-
+/*
 sparseRIV consolidateI2SIndirect(int *implicit, size_t valueCount);
 sparseRIV consolidateI2SDirect(int *implicit, size_t valueCount);
+* consolidate I2S is temporarily deprecated.  may be brought back.
+* in tandem they are much faster, but less careful with RAM */
+
+/* caheDump flushes the RIV cache out to relevant files, backing up all 
+ * data.  this is called by the lexClose and signalSecure functions
+ */
 int cacheDump();
+
+/* adds all elements of an implicit RIV (a sparseRIV represented without values)
+ * to a denseRIV.  used by the file2L2 functions in aggregating a document vector
+ */
 int* addI2D(int* destination, int* locations, size_t seedCount);
+
+/* allocates a denseRIV filled with 0s
+ */
 denseRIV denseAllocate();
+/* redefines signal behavior to protect cached data against seg-faults etc*/
 void signalSecure(int signum, siginfo_t *si, void* arg);
 /* begin definitions */
 
@@ -198,6 +218,7 @@ int* addI2D(int* destination, int *locations, size_t valueCount){// #TODO fix de
 	return destination;
 }
 
+/*
 sparseRIV consolidateI2SIndirect(int *implicit, size_t valueCount){
 	int *denseTemp = mapI2D(implicit, valueCount);
 	
@@ -239,7 +260,8 @@ sparseRIV consolidateI2SDirect(int *implicit, size_t valueCount){
 	memcpy(sparseOut.locations, locationsTemp, sparseOut.count*sizeof(int));
 	memcpy(sparseOut.values, valuesTemp, sparseOut.count*sizeof(int));
 	return sparseOut;
-}
+}*/
+
 sparseRIV consolidateD2S(int *denseInput){
 	sparseRIV output;
 	output.count = 0;
@@ -266,7 +288,7 @@ sparseRIV consolidateD2S(int *denseInput){
 	/* a slot is opened for the locations/values pair */
 	output.locations = (int*) malloc(output.count*2*sizeof(int));
 	if(!output.locations){
-		printf("memory allocation failed"); //*TODO enable fail point knowledge
+		printf("memory allocation failed"); //*TODO enable fail point knowledge and security
 	}
 	/* copy locations values into opened slot */
 	memcpy(output.locations, locations, output.count*sizeof(int));
@@ -312,7 +334,7 @@ int wordtoSeed(unsigned char* word){
 	int seed = 0;
 	while(*word){
 		/* left-shift 5 each time *should* make seeds unique to words
-		 * this means letters are taken as characters couned in base 32, which
+		 * this means letters are taken as characters counted in base 32, which
 		 * should be large enough to hold all english characters plus a few outliers
 		 * */
 		seed += (*(word))<<(i*5);
@@ -425,23 +447,20 @@ void signalSecure(int signum, siginfo_t *si, void* arg){
 }
 
 int cacheDump(){
-	int i=0;
-	int j=0;
+
 	int flag = 0;
 	denseRIV* cache_slider = RIVKey.RIVCache;
 	denseRIV* cache_stop = RIVKey.RIVCache+CACHESIZE;
 	while(cache_slider<cache_stop){
 		if((*cache_slider).cached){
 
-			j++;
 			flag += fLexPush(*cache_slider);
 		}
 		else{
-			i++;
+		
 		}
 		cache_slider++;
 	}
-	printf("%d cacheslots unused\n%d, cacheslots used", i, j);
 	return flag;
 }
 
