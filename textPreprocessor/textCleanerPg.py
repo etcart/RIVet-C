@@ -9,62 +9,16 @@ from nltk.corpus import wordnet as wn
 import pdb
 from nltk.stem import PorterStemmer
 
-def adverbFix(word):
-    if not nltk.pos_tag(word)[0][1] == 'RB':
-        return word
-
-    adjective = word[:-2]
-    if not nltk.pos_tag(word)[0][1] == 'JJ':
-        return word;
-    FILE = open("lexicon/" + word, "w")
-    FILE.write("2" + temp)
-    FILE.close()
-    FILE = open("lexicon/" + adjective, "w")
-    FILE.write("1")
-    FILE.close()
-    return adjective
-
-def strip(word):
-    for suffix in ['ing', 'ly', 'ed', 'ious', 'ies', 'ive', 'es', 's', 'ment']:
-        if word.endswith(suffix):
-            return word[:-len(suffix)]
-        return word
-
-
+#cleanword will pull all to lowerCase and remove any non-letter characters
 def cleanWord(word):
-    #if(len(word) == 0):
-        #print("\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************\n\n***************")
+    
     word = word.lower();
     regex = re.compile('[^a-z]+')
     word = regex.sub('', word)
-    #print(word)
+ 
     return word
 
-
-def fileCheck(word):
-
-    try:
-        #print("trying")
-        wordFile = open("lexicon/{}".format(word), "r")
-        code = int(wordFile.read(1))
-    except:
-        #print("file does not exist")
-        return 0
-    #print("fileCode{}".format(code))
-
-    if code == 2:
-        word = wordFile.read()
-        #print("file flipped to: " + word)
-        wordFile.close()
-        return word
-    elif code == 1:
-        #print("file accepted: " + word)
-        wordFile.close()
-        return word
-    elif code == 0:
-        wordFile.close()
-        return -1
-
+#nltk morphy will attempt a preliminary noise reduction, and flag if not a word
 def morphyTest(word):
     morphyTemp = wn.morphy(word)
 
@@ -73,7 +27,7 @@ def morphyTest(word):
 
     return morphyTemp;
 
-
+#blacklist lists words we remove as noise
 blacklist = ["a", "an", "the", "so", "as", "how",
              "i", "me", "we", "they", "you", "it", "he", "she",
              "but", "have", "had",
@@ -90,64 +44,62 @@ print(sourceString + "\n")
 
 if not os.path.exists('cleanbooks'):
     os.makedirs('cleanbooks')
-if not os.path.exists('lexicon'):
-    os.makedirs('lexicon')
 
+#document will be split into paragraph sized documents, in the following directory
 if not os.path.exists(pathString):
     os.makedirs(pathString)
 
 call(["python", "blacklist.py"])
 i=0
+# to begin with, we expect a project gutenberg header, legal info that we skip
 skip = 1
 with open(sourceString, 'U') as fileIn:
 
     text = fileIn.read()
-
+	#project gutenberg delimits paragraphs by double returns
     for paragraph in text.split(2*os.linesep):
 
         if not paragraph:
             continue
+        #two different wordings for the begining of the actual content
         elif "*** START OF " in paragraph or "*END THE SMALL PRINT" in paragraph:
             skip = 0
             continue
-        elif "*** END OF " in paragraph:
+		#three different wordings for the end of the actual content
+        elif "*** END OF " in paragraph or "End of Project Gutenberg's" in paragraph or "End of the Project Gutenberg" in paragraph:
             fileIn.close()
             sys.exit()
-        elif "End of Project Gutenberg's" in paragraph:
-            fileIn.close()
-            sys.exit()
-        elif "End of the Project Gutenberg" in paragraph:
-            fileIn.close()
-            sys.exit()
+		#if we have passed the header, begin processing
         if not skip:
             cleanString = ''
             i += 1
+            #create a numbered text file to hold one paragraph
             fileOut = open("{}{}.txt".format(pathString, i), "w")
-            for line in paragraph.split(os.linesep):
+            
+            
+            for line in paragraph.split(os.linesep):#os.linesep may need to be changed for operating system
 
                 for tempWord in line.split():
+					#remove extraneous characters and lower-case
                     word=cleanWord(tempWord)
 
                     if not word:
                         continue
-
-                    # temp = fileCheck(word)
-                    #
-                    # if temp == -1:
-                    #     continue
-                    # if temp == 0:
+					#is it a word?
                     temp = morphyTest(word)
                     if temp:
+						#if the word passes morphy test, stem it
                         stem = ps.stem(temp)
+                        #if not blacklisted, add it to the accumulating paragraph with a space
                         if stem and not stem in blacklist:
                             cleanString = cleanString + ' ' + stem
 
 
 
-                    #if temp == 0:
-                    #    catchAll(word)
+                
                 cleanString = cleanString + os.linesep
-            if len(cleanString.split(' ')) > 10:
+                #trim paragraphs too small to be meaningful
+            if len(cleanString.split(' ')) > 5:
                 
                 fileOut.write(cleanString)
                 fileOut.close()
