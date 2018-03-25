@@ -314,9 +314,9 @@ void lexOpen(char* lexName){
 	struct sigaction action;
 	action.sa_sigaction = signalSecure;
 	action.sa_flags = SA_SIGINFO;
-	//for(int i=1; i<27; i++){
+	for(int i=1; i<27; i++){
 		sigaction(11,&action,NULL);
-	//}
+	}
 	 
 
 	/* open a slot for a cache of dense RIVs, optimized for frequent accesses */
