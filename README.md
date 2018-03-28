@@ -27,7 +27,6 @@ comparisons
 * Linux OS
 * GCC compiler
 
-
 ### Installation
 
 NONE!
@@ -35,10 +34,12 @@ NONE!
 * #include "pathTo/RIVtools.h"
 * Get started!
 
+
+
 ### Examples
 
 In this code, we will add the context data of one text file to each word
-that it contains, adding that to the knowledge pool of the lexicon
+that it contains, adding that to the knowledge pool of the lexicon:
 ```C
 #include "RIVtools.h"
 
@@ -74,9 +75,13 @@ that it contains, adding that to the knowledge pool of the lexicon
 	lexClose();
 	fclose(testFile);
 ```
+for this style of reading, to get good, long-term accuracy, it's important
+to feed it stemmed, cleaned plaintext to reduce noise.  there is an included
+python script for this, under applications/lexiconBuilder
 
-in this code we compare two words in the lexicon, to see how the system understands them
-(this requires that we have already built a lexicon)
+
+In this code we compare two words in the lexicon, to see how the system understands them
+(this requires that we have already built a lexicon):
 
 ```C
 #include "RIVtools.h"

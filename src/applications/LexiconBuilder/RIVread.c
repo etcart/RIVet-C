@@ -11,7 +11,7 @@
 #include <dirent.h>
 #include <error.h>
 #define CACHESIZE 15000
-#include "../src/RIVtools.h"
+#include "../../RIVtools.h"
 
 //this program reads a directory full of files, and adds all context vectors (considering file as context)
 //to all words found in these files. this is used to create a lexicon, or add to an existing one

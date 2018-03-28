@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "RIVLower.h"
-#include "RIVaccessories.h"
+#include "core/RIVLower.h"
+#include "core/RIVaccessories.h"
 
 
 
@@ -37,11 +37,6 @@ double cosCompare(denseRIV baseRIV, sparseRIV comparator);
 
 /*currently unused */
 sparseRIV wordtoL2(char* word);
-
-/* converts an implicit RIV (a set of unvalued locations) into a formal 
- * sparse RIV.  this chooses the best method to perform the consolidation
- * and launches that function   defunct right now for memory usage reasons*/
-sparseRIV consolidateI2S(int *implicit, size_t valueCount);
 
 sparseRIV normalizeFloored(denseRIV input, int factor);
 
@@ -176,17 +171,7 @@ sparseRIV fileToL2Clean(FILE *data){
 	output.boolean = 1;
 	return output;
 }
-//defunct temporarily, might make a return
-/*sparseRIV consolidateI2S(int *implicit, size_t valueCount){
-	if(valueCount<RIVKey.I2SThreshold){
-		 //direct method is faster on small datasets, but has geometric scaling on large datasets 
-		return consolidateI2SDirect(implicit, valueCount);
-	}else{
-		// optimized for large datasets 
-		return consolidateI2SIndirect(implicit, valueCount);
-	}
 
-}*/
 void aggregateWord2D(denseRIV destination, char* word){
 
 

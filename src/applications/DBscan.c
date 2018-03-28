@@ -12,7 +12,7 @@
 #define MINSIZE 3000
 
 
-#include "../src/RIVtools.h"
+#include "../RIVtools.h"
 
 struct DBnode{
 	sparseRIV RIV;
