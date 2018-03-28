@@ -208,7 +208,6 @@ double getMagnitudeSparse(sparseRIV input){
 	int *values_stop = values+input.count;
 	while(values<values_stop){
 		temp += (*values)*(*values);
-		if(temp> 0x0AFFFFFFFFFFFFFF) printf("%s, fuuuuuuuuuuuuck*****************************************",input.name );
 		values++;
 	}
 	return sqrt(temp);
@@ -255,7 +254,7 @@ int lexPush(denseRIV RIVout){
 	return 0;
 	#else /* CACHESIZE != 0 */
 
-	/* if our RIV was cached, there are two options (hopefully)
+	/* if our RIV was cached, there are two options
 	 * either the RIV is still cached, and the data has been updated 
 	 * to the cache or the RIV was pushed out from under it, 
 	 * in which case it has already been pushed! move on*/
