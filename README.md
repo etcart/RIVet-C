@@ -40,7 +40,7 @@ NONE!
 ```C
 #include "RIVtools.h"
 
-//we open the lexicon
+	//we open the lexicon
 	lexOpen("lexicon");
 	
 	FILE* testFile = fopen("testFile.txt", "r");
