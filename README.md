@@ -75,8 +75,8 @@ that it contains, adding that to the knowledge pool of the lexicon:
 	lexClose();
 	fclose(testFile);
 ```
-for this style of reading, to get good, long-term accuracy, it's important
-to feed it stemmed, cleaned plaintext to reduce noise.  there is an included
+For this style of reading, to get good, long-term accuracy, it's important
+to feed it stemmed, cleaned plaintext to reduce noise.  There is an included
 python script for this, under applications/lexiconBuilder
 
 
