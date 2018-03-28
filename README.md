@@ -35,8 +35,10 @@ NONE!
 * #include "pathTo/RIVtools.h"
 * Get started!
 
-### Example
+### Examples
 
+In this code, we will add the context data of one text file to each word
+that it contains, adding that to the knowledge pool of the lexicon
 ```C
 #include "RIVtools.h"
 
@@ -67,10 +69,31 @@ NONE!
 		//push the vector back to the lexicon for permanent storage
 		lexPush(word);
 	}
-	
+	//always the lexicon must be closed
 	lexClose();
 	fclose(testFile);
-
-
-
 ```
+
+```C
+#include "RIVtools.h"
+
+	//we open the lexicon
+	lexOpen("lexicon");
+	
+	//we pull the two words we want to compare from the lexicon
+	denseRIV firstWordDense = lexPull("denmark");
+	denseRIV secondWordDense = lexPull("norway");
+	
+	//we convert one of the two to a sparse RIV
+	sparseRIV firstWordSparse = consolidateD2S(firstWordDense);
+	
+	//we take the cosine of the angle between these two
+	double cosine = cosCompare(secondWordDense, firstWordSparse);
+	
+	//from most well-formed lexica, we find that these are 
+	//>0,99 cosine similarity
+	printf("similarity of these two words is: %lf", cosine);
+	
+	//always we must close the lexicon
+	lexClose();
+```	
