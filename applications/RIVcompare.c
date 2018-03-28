@@ -1,7 +1,7 @@
 #include <stdio.h>
-#include "../RIVtools.h"
 #include <dirent.h>
 #include <sys/types.h>
+#include "../src/RIVtools.h"
 int main(){
 
 	lexOpen("lexicon/");

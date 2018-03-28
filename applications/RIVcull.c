@@ -3,7 +3,7 @@
 #include <dirent.h>
 #include <time.h>
 #define THRESHOLD 0.70
-#include "../RIVtools.h"
+#include "../src/RIVtools.h"
 
 
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
