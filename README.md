@@ -34,3 +34,43 @@ NONE!
 * Clone the repo
 * #include "pathTo/RIVtools.h"
 * Get started!
+
+### Example
+
+```C
+#include "RIVtools.h"
+
+//we open the lexicon
+	lexOpen("lexicon");
+	
+	FILE* testFile = fopen("testFile.txt", "r");
+	//we create a context Vector
+	sparseRIV context = file2L2(testFile);
+	
+	int wordCount = context.frequency;
+	char word[100];
+	
+	//create an array of dense vectors
+	denseRIV fileRIVs[wordCount];
+	
+	for( int i=0; i<wordCount; i++){
+		
+		//read the next word in the document
+		fscanf(testFile, "%99s", word);
+		
+		//pull a vector from the lexicon
+		fileRIVs[i] = lexPull(word);
+		
+		//add context to the lexicon vector
+		addS2D(fileRIVs[i].values, context);
+		
+		//push the vector back to the lexicon for permanent storage
+		lexPush(word);
+	}
+	
+	lexClose();
+	fclose(testFile);
+
+
+
+```
