@@ -46,6 +46,7 @@ that it contains, adding that to the knowledge pool of the lexicon
 	lexOpen("lexicon");
 	
 	FILE* testFile = fopen("testFile.txt", "r");
+	
 	//we create a context Vector
 	sparseRIV context = file2L2(testFile);
 	
