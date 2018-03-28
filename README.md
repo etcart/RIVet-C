@@ -74,6 +74,9 @@ that it contains, adding that to the knowledge pool of the lexicon
 	fclose(testFile);
 ```
 
+in this code we compare two words in the lexicon, to see how the system understands them
+(this requires that we have already built a lexicon)
+
 ```C
 #include "RIVtools.h"
 
