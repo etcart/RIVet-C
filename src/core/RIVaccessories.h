@@ -1,11 +1,20 @@
 #ifndef RIVACCESS_H_
 #define RIVACCESS_H_
+#include <stdlib.h>
+#include "RIVLower.h"
+/* redefines signal behavior to protect cached data against seg-faults etc*/
+void signalSecure(int signum, siginfo_t *si, void* arg);
+
 /*isWordClean filters words that contain non-letter characters, and 
  * upperCase letters, allowing only the '_' symbol through
  */
 int isWordClean(char* word);
+
 /* used by wordClean */
 int isLetter(char c);
+
+/* creates a standard seed from the characters in a word, hopefully unique */
+int wordtoSeed(unsigned char* word);
 
 int isLetter(char c){
 	
@@ -26,5 +35,27 @@ int isWordClean(char* word){
 	return 1;
 		
 }
-
+int wordtoSeed(unsigned char* word){
+	int i=0;
+	int seed = 0;
+	while(*word){
+		/* left-shift 5 each time *should* make seeds unique to words
+		 * this means letters are taken as characters counted in base 32, which
+		 * should be large enough to hold all english characters plus a few outliers
+		 * */
+		seed += (*(word))<<(i*5);
+		word++;
+		i++;
+	}
+	return seed;
+}
+void signalSecure(int signum, siginfo_t *si, void* arg){
+  if(cacheDump()){
+	  puts("cache dump failed, some lexicon data lost");
+  }else{
+	puts("cache dumped successfully");
+  }
+  signal(signum, SIG_DFL);
+  kill(getpid(), signum);
+}
 #endif

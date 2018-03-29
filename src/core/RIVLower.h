@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <math.h>
+#include "RIVaccessories.h"
 /* RIVSIZE macro defines the dimensionality off the RIVs we will use
  * 25000 is the standard, but can be redefined specifically
  */
@@ -106,9 +107,6 @@ void lexClose();
  */
 sparseRIV consolidateD2S(int *denseInput);  //#TODO fix int*/denseRIV confusion
 
-
-
-
 /* makeSparseLocations must be called repeatedly in the processing of a 
  * file to produce a series of locations from the words of the file
  * this produces an "implicit" RIV which can be used with the mapI2D function
@@ -130,9 +128,6 @@ int fLexPush(denseRIV RIVout);
  */
 denseRIV fLexPull(FILE* lexWord);
 
-/* creates a standard seed from the characters in a word, hopefully unique */
-int wordtoSeed(unsigned char* word);
-
 /* mapI2D maps an "implicit RIV" that is, an array of index values, 
  * arranged by chronological order of generation (as per makesparseLocations)
  * it assigns, in the process of mapping, values according to ordering
@@ -144,11 +139,6 @@ int* mapI2D(int *locations, size_t seedCount);
  * to be more than worth using
  */
 int* addS2D(int* destination, sparseRIV input);
-/*
-sparseRIV consolidateI2SIndirect(int *implicit, size_t valueCount);
-sparseRIV consolidateI2SDirect(int *implicit, size_t valueCount);
-* consolidate I2S is temporarily deprecated.  may be brought back.
-* in tandem they are much faster, but less careful with RAM */
 
 /* caheDump flushes the RIV cache out to relevant files, backing up all 
  * data.  this is called by the lexClose and signalSecure functions
@@ -163,8 +153,7 @@ int* addI2D(int* destination, int* locations, size_t seedCount);
 /* allocates a denseRIV filled with 0s
  */
 denseRIV denseAllocate();
-/* redefines signal behavior to protect cached data against seg-faults etc*/
-void signalSecure(int signum, siginfo_t *si, void* arg);
+
 /* begin definitions */
 
 int* addS2D(int* destination, sparseRIV input){// #TODO fix destination parameter vs calloc of destination
@@ -183,7 +172,6 @@ int* addS2D(int* destination, sparseRIV input){// #TODO fix destination paramete
 	return destination;
 }
 
-
 int* mapI2D(int *locations, size_t valueCount){// #TODO fix destination parameter vs calloc of destination
 	int *destination = (int*)calloc(RIVSIZE,sizeof(int));
 	int *locations_slider = locations;
@@ -197,8 +185,7 @@ int* mapI2D(int *locations, size_t valueCount){// #TODO fix destination paramete
 		destination[*locations_slider] -= 1;
 		locations_slider++;
 	}
-	
-	
+
 	return destination;
 }
 int* addI2D(int* destination, int *locations, size_t valueCount){// #TODO fix destination parameter vs calloc of destination
@@ -218,49 +205,7 @@ int* addI2D(int* destination, int *locations, size_t valueCount){// #TODO fix de
 	return destination;
 }
 
-/*
-sparseRIV consolidateI2SIndirect(int *implicit, size_t valueCount){
-	int *denseTemp = mapI2D(implicit, valueCount);
-	
-	sparseRIV sparseOut = consolidateD2S(denseTemp);
-	
-	free(denseTemp);
-	
-	
-	return sparseOut;
-	
-	
-}
-sparseRIV consolidateI2SDirect(int *implicit, size_t valueCount){
-	sparseRIV sparseOut;
-	int *locationsTemp = RIVKey.h_tempBlock+RIVSIZE;
-	int *valuesTemp = RIVKey.h_tempBlock+2*RIVSIZE;
-	sparseOut.count = 0;
-	int add = 1;
-	int found;
-	for(int i=0; i<valueCount; i++){
-		found = 0;
-		for(int j=0; j<sparseOut.count; j++){
-			if(implicit[i] == locationsTemp[j]){
-				valuesTemp[i] += add;
-				add *= -1;
-				found = 1;
-			}
-		}
-		if(!found){
-			locationsTemp[sparseOut.count] = implicit[i];
-			
-			valuesTemp[sparseOut.count] = add;
-			sparseOut.count++;
-			add*= -1;
-		}
-	}
-	sparseOut.locations = (int*)malloc(2*sparseOut.count*sizeof(int));
-	sparseOut.values = sparseOut.locations+sparseOut.count;
-	memcpy(sparseOut.locations, locationsTemp, sparseOut.count*sizeof(int));
-	memcpy(sparseOut.values, valuesTemp, sparseOut.count*sizeof(int));
-	return sparseOut;
-}*/
+
 
 sparseRIV consolidateD2S(int *denseInput){
 	sparseRIV output;
@@ -303,7 +248,7 @@ sparseRIV consolidateD2S(int *denseInput){
 
 
 void lexOpen(char* lexName){
-	/* RIVKey.I2SThreshold = sqrt(RIVSIZE);*/ //deprecate?
+	
 	struct stat st = {0};
 	if (stat(lexName, &st) == -1) {
 		mkdir(lexName, 0777);
@@ -328,20 +273,6 @@ void lexClose(){
 	if(cacheDump()){
 		puts("cache dump failed, some lexicon data was lost");
 	}
-}
-int wordtoSeed(unsigned char* word){
-	int i=0;
-	int seed = 0;
-	while(*word){
-		/* left-shift 5 each time *should* make seeds unique to words
-		 * this means letters are taken as characters counted in base 32, which
-		 * should be large enough to hold all english characters plus a few outliers
-		 * */
-		seed += (*(word))<<(i*5);
-		word++;
-		i++;
-	}
-	return seed;
 }
 
 void makeSparseLocations(unsigned char* word,  int *locations, size_t count){
@@ -381,7 +312,6 @@ int fLexPush(denseRIV RIVout){
 		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
 		fwrite(temp.locations, temp.count, sizeof(int), lexWord);
 		fwrite(temp.values, temp.count, sizeof(int), lexWord);
-	//	printf("%s, writing as sparse, frequency: %d", RIVout.name, *RIVout.frequency);
 	}else{
 		/* saturation is too high, better to store dense */
 		/* there's gotta be a better way to do this */
@@ -391,7 +321,6 @@ int fLexPush(denseRIV RIVout){
 		fwrite(RIVout.contextSize, 1, sizeof(int), lexWord);
 		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
 		fwrite(RIVout.values, RIVSIZE, sizeof(int), lexWord);
-	//	printf("%s, writing as dense, frequency: %d", RIVout.name, *RIVout.frequency);
 	}
 
 	fclose(lexWord);
@@ -436,15 +365,7 @@ denseRIV fLexPull(FILE* lexWord){
 
 }
 
-void signalSecure(int signum, siginfo_t *si, void* arg){
-  if(cacheDump()){
-	  puts("cache dump failed, some lexicon data lost");
-  }else{
-	puts("cache dumped successfully");
-  }
-  signal(signum, SIG_DFL);
-  kill(getpid(), signum);
-}
+
 
 int cacheDump(){
 
