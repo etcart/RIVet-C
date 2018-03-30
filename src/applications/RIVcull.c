@@ -5,12 +5,17 @@
 #define THRESHOLD 0.70
 #include "../RIVtools.h"
 
+/* this program identifies all near-duplicates among the documents in the 
+ * chosen root directory, using RIV comparison */
 
+// fills the fileRIVs array with a vector for each file in the root directory
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
 
 int main(int argc, char *argv[]){
-	clock_t begintotal = clock();
+
 	int fileCount = 0;
+	
+	//initializes the fileRIVs array to be reallocced by later function
 	sparseRIV *fileRIVs = (sparseRIV*) malloc(1*sizeof(sparseRIV));
 	char rootString[2000];
 	if(argc <2){ 
@@ -20,101 +25,105 @@ int main(int argc, char *argv[]){
 	strcpy(rootString, argv[1]);
 	strcat(rootString, "/");
 
+	//gather all vectors ino the fileRIVs array and count them in fileCount
 	directoryToL2s(rootString, &fileRIVs, &fileCount);
 	printf("fileCount: %d\n", fileCount);
 	
-	sparseRIV* fileRIVs_slider = fileRIVs;
-	sparseRIV* fileRIVs_stop = fileRIVs+fileCount;
-	while(fileRIVs_slider <fileRIVs_stop){
-		(*fileRIVs_slider).magnitude = getMagnitudeSparse(*fileRIVs_slider);
-		fileRIVs_slider++;
+	//first calculate all magnitudes for later use
+	for(int i = 0; i < fileCount; i++){
+		fileRIVs[i].magnitude = getMagnitudeSparse(fileRIVs[i]);
 		
 	}
-	
-	clock_t beginnsquared = clock();
+	clock_t begintotal = clock();
 	float cosine;
 	float minmag;
 	float maxmag;
+	
+	//all cosines need a sparse-dense comparison.  so we will create a 
 	denseRIV baseDense;
+	
+	//allocate the values section of the denseRIV
 	baseDense.values = malloc(RIVSIZE*sizeof(int));
-	fileRIVs_slider = fileRIVs;
-	sparseRIV* comparators_slider;
-	int count = 0;
-	while(fileRIVs_slider<fileRIVs_stop){
-		comparators_slider = fileRIVs;
+		
+	for(int i = 0; i < fileCount; i++){
+		//0 out the denseVector, and map the next sparseVector to it
 		memset(baseDense.values, 0, RIVSIZE*sizeof(int));
-		baseDense.values = addS2D(baseDense.values, *fileRIVs_slider);
-		baseDense.magnitude = (*fileRIVs_slider).magnitude;
+		addS2D(baseDense.values, fileRIVs[i]);
+		
+		//pass magnitude to the to the dense vector
+		baseDense.magnitude = fileRIVs[i].magnitude;
+		
+		//if these two vectors are too different in size, we can know that they are not duplicates
 		minmag = baseDense.magnitude*.85;
 		maxmag  = baseDense.magnitude*1.15;
-		while(comparators_slider < fileRIVs_slider){
-			if((*comparators_slider).magnitude < maxmag && (*comparators_slider).magnitude > minmag && (*comparators_slider).boolean){
-				cosine = cosCompare(baseDense, *comparators_slider);
+		for(int j = 0; j < i; j++){
+			//if this vector is within magnitude threshold
+			if(fileRIVs[j].magnitude < maxmag 
+			&& fileRIVs[j].magnitude > minmag){
 				
-				count++;
+				//identify the similarity of these two vectors
+				cosine = cosCompare(baseDense, fileRIVs[j]);
+								
+		
+				//if the two are similar enough to be flagged
 				if(cosine>THRESHOLD){
-					printf("%s\t%s\n%f\n", (*fileRIVs_slider).name , (*comparators_slider).name, cosine);
-				(*comparators_slider).boolean = 0; 
-					RIVKey.thing++; 
-				}
-				
+					printf("%s\t%s\n%f\n", fileRIVs[i].name , fileRIVs[j].name, cosine);
+				}	
 			}
-			comparators_slider++;
 		}
-		
-		
-		fileRIVs_slider++;
-		
 	}
-	clock_t endnsquared = clock();
-	double time = (double)(endnsquared - beginnsquared) / CLOCKS_PER_SEC;
-	printf("\nnsquared time:%lf\n\n", time);
-	printf("\ncosines: %d \n", count);
-	printf("\nsims: %d \n", RIVKey.thing);
+	printf("fileCount: %d", fileCount);
+	free(fileRIVs);
 	clock_t endtotal = clock();
 	double time_spent = (double)(endtotal - begintotal) / CLOCKS_PER_SEC;
 	printf("total time:%lf\n\n", time_spent);
-	free(fileRIVs);
-	
 return 0;
 }
-void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
 
+//mostly a standard recursive Dirent-walk
+void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
+/* *** begin Dirent walk *** */
 	char pathString[2000];
 	DIR *directory;
-    struct dirent *files = 0;
-	
+	struct dirent *files = 0;
+
 	if(!(directory = opendir(rootString))){
 		printf("location not found, %s\n", rootString);
 		return;
 	}
-	
+
 	while((files=readdir(directory))){
-		if(*(files->d_name) == '.') continue;
-	
+		
+		if(!files->d_name[0]) break;
+		while(*(files->d_name)=='.'){
+			files = readdir(directory);
+		}
+		
+		
+		
 		if(files->d_type == DT_DIR){
 			strcpy(pathString, rootString);
-			
+
 			strcat(pathString, files->d_name);
 			strcat(pathString, "/");
 			directoryToL2s(pathString, fileRIVs, fileCount);
+			continue;
 		}
-			
-
 		strcpy(pathString, rootString);
 		strcat(pathString, files->d_name);
+
+/* *** end dirent walk, begin meat of function  *** */
+
 		FILE *input = fopen(pathString, "r");
-		if(!input){
-			printf("file %s doesn't seem to exist, breaking out of loop", pathString);
-			return;
-		}else{
-			(*fileRIVs) = (sparseRIV*)realloc((*fileRIVs), ((*fileCount)+1)*sizeof(sparseRIV));
+		if(input){
 			
-			(*fileRIVs)[(*fileCount)] = fileToL2(input);
-			strcpy((*fileRIVs)[(*fileCount)].name, pathString);
+			*fileRIVs = (sparseRIV*)realloc((*fileRIVs), ((*fileCount)+1)*sizeof(sparseRIV));
+			
+			(*fileRIVs)[*fileCount] = fileToL2(input);
+			strcpy((*fileRIVs)[*fileCount].name, pathString);
 			
 			fclose(input);
-			(*fileCount)++;
+			 *fileCount += 1;
 		}
 	}
 }
