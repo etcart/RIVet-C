@@ -10,12 +10,12 @@
 
 
 /* lexPush writes a denseRIV to a file for permanent storage */
-int lexPush(denseRIV RIVout);
+int lexPush(denseRIV* RIVout);
 /* lexPull reads an existing lexicon entry (under directory "lexicon")
  * and creates a denseRIV with those attributes.
  * if the file does not exist, it creates a 0 vector with the name of word
  */
-denseRIV lexPull(char* word);
+denseRIV* lexPull(char* word);
 
 /* fileToL2 takes an input file, reads words (delimiting on " " and "\n") 
  * and returns a sparse RIV which is the vector sum of the base RIVs of each 
@@ -28,9 +28,6 @@ sparseRIV fileToL2(FILE *input);
  * this is important if you will be lexPush-ing those words later
  */
 sparseRIV fileToL2Clean(FILE *data);
-
-/*filetoL2direct is an experiment in simplifying the process.  it's slow */
-sparseRIV fileToL2direct(FILE *data);
 
 /*cosine determines the "similarity" between two RIVs. */
 double cosCompare(denseRIV baseRIV, sparseRIV comparator);
@@ -213,21 +210,23 @@ double getMagnitudeSparse(sparseRIV input){
 	return sqrt(temp);
 }
 
-denseRIV lexPull(char* word){
+denseRIV* lexPull(char* word){
 	#if CACHESIZE > 0
 
 	/* if there is a cache, first check if the word is cached */
 	srand(wordtoSeed((unsigned char*)word));
 	int hash = rand()%CACHESIZE;
-	if(!strcmp(word, RIVKey.RIVCache[hash].name)){
+	if(RIVKey.RIVCache[hash]){
+		if(!strcmp(word, RIVKey.RIVCache[hash]->name)){
 
-		/* if word is cached, pull from cache and exit */
-		return RIVKey.RIVCache[hash];
+			/* if word is cached, pull from cache and exit */
+			return RIVKey.RIVCache[hash];
+		}
 	}
 	#endif /* CACHESIZE > 0 */
 
 	/* if not, attempt to pull the word data from lexicon file */
-	denseRIV output;
+	denseRIV* output;
 
 	char pathString[200];
 
@@ -241,13 +240,13 @@ denseRIV lexPull(char* word){
 		fclose(lexWord);
 	}else{
 		/*if file does not exist, return a 0 vector (word is new to the lexicon */ //#TODO enable NO-NEW features to protect mature lexicons? 
-		output = denseAllocate();
+		output = calloc(1, sizeof(denseRIV));
 	}
 
-	strcpy(output.name, word);
+	strcpy(output->name, word);
 	return output;
 }
-int lexPush(denseRIV RIVout){
+int lexPush(denseRIV* RIVout){
 	#if CACHESIZE == 0
 	/* if there is no cache, simply push to file */
 	fLexPush(RIVout);
@@ -258,27 +257,26 @@ int lexPush(denseRIV RIVout){
 	 * either the RIV is still cached, and the data has been updated 
 	 * to the cache or the RIV was pushed out from under it, 
 	 * in which case it has already been pushed! move on*/
-
-	if(RIVout.cached){
+	if(RIVout->cached){
 		return 0;
 	}
 
-	srand(wordtoSeed((unsigned char*)RIVout.name));
+	srand(wordtoSeed((unsigned char*)RIVout->name));
 	int hash = rand()%CACHESIZE;
 
-	if(!RIVKey.RIVCache[hash].cached){
+	if(!RIVKey.RIVCache[hash]){
 		/* if there is no word in this cache slot, push to cache instead of file */
 		RIVKey.RIVCache[hash] = RIVout;
-		RIVKey.RIVCache[hash].cached = 1;
+		RIVKey.RIVCache[hash]->cached = 1;
 		return 0;
 	/*if the current RIV is more frequent than the RIV holding its slot */
-	}else if(*(RIVout.frequency) > *(RIVKey.RIVCache[hash].frequency) ){
+	}else if(RIVout->frequency > RIVKey.RIVCache[hash]->frequency ){
 		/* push the current cache entry to a file */
 		int diag = fLexPush(RIVKey.RIVCache[hash]);
 		/* push the current RIV to cache */
 
 		RIVKey.RIVCache[hash] = RIVout;
-		RIVKey.RIVCache[hash].cached = 1;
+		RIVKey.RIVCache[hash]->cached = 1;
 		return diag;
 	}else{
 		/* push current RIV to file */
@@ -288,37 +286,10 @@ int lexPush(denseRIV RIVout){
 	#endif /* CACHESIZE == 0 */
 
 }
-sparseRIV fileToL2direct(FILE *data){;
-	unsigned char word[100] = {0};
-	denseRIV denseTemp;
-	// a temporary dense RIV is stored in the tempBlock 
-	denseTemp.values = RIVKey.h_tempBlock;
-	memset(RIVKey.h_tempBlock, 0, RIVSIZE*sizeof(int));
-	int count = 0;
-	while(fscanf(data, "%99s", word)){
-		count++;
-		if(feof(data)){
-			break;
-		}
-		if(!(*word)){
-			break;
-		}
-		
-		
-		// add word's L1 RIV to the accumulating implicit RIV 
-		aggregateWord2D(denseTemp, (char*)word);
-		
-	}
-	sparseRIV output = consolidateD2S(denseTemp.values);
-	
-	// frequency records the number of words in this file 
-	output.frequency = count;
-	output.boolean = 1;
-	return output;
-}
+
 
 sparseRIV normalizeFloored(denseRIV input, int factor){
-	float divisor = (float)factor/(*input.contextSize);
+	float divisor = (float)factor/(input.contextSize);
 //	printf("in norm: %d, %d, %f\n", *input.contextSize, factor, divisor);
 	int* locations = RIVKey.h_tempBlock;
 	int* values = locations+RIVSIZE;
@@ -337,14 +308,14 @@ sparseRIV normalizeFloored(denseRIV input, int factor){
 	strcpy(output.name, input.name);
 	output.count = count;
 	output.magnitude = getMagnitudeSparse(output);
-	output.contextSize = *input.contextSize;
-	output.frequency = *input.frequency;
+	output.contextSize = input.contextSize;
+	output.frequency = input.frequency;
 
 	return output;
 }
 
 sparseRIV normalize(denseRIV input, int factor){
-	float divisor = (float)factor/(*input.contextSize);
+	float divisor = (float)factor/(input.contextSize);
 //	printf("in norm: %d, %d, %f\n", *input.contextSize, factor, divisor);
 	int* locations = RIVKey.h_tempBlock;
 	int* values = locations+RIVSIZE;
@@ -363,8 +334,8 @@ sparseRIV normalize(denseRIV input, int factor){
 	strcpy(output.name, input.name);
 	output.count = count;
 	output.magnitude = getMagnitudeSparse(output);
-	output.contextSize = *input.contextSize;
-	output.frequency = *input.frequency;
+	output.contextSize = input.contextSize;
+	output.frequency = input.frequency;
 	
 	return output;
 }

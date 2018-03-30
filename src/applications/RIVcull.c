@@ -35,19 +35,17 @@ int main(int argc, char *argv[]){
 		
 	}
 	clock_t begintotal = clock();
-	float cosine;
-	float minmag;
-	float maxmag;
+	double cosine;
+	double minmag;
+	double maxmag;
 	
 	//all cosines need a sparse-dense comparison.  so we will create a 
 	denseRIV baseDense;
-	
-	//allocate the values section of the denseRIV
-	baseDense.values = malloc(RIVSIZE*sizeof(int));
 		
 	for(int i = 0; i < fileCount; i++){
+		
 		//0 out the denseVector, and map the next sparseVector to it
-		memset(baseDense.values, 0, RIVSIZE*sizeof(int));
+		memset(&baseDense, 0, sizeof(denseRIV));
 		addS2D(baseDense.values, fileRIVs[i]);
 		
 		//pass magnitude to the to the dense vector

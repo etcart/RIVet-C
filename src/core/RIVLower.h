@@ -5,7 +5,6 @@
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
-//#include <math.h>
 #include <sys/stat.h>
 #include "RIVaccessories.h"
 /* RIVSIZE macro defines the dimensionality off the RIVs we will use
@@ -70,12 +69,12 @@ typedef struct{
  * performed between sparse and dense (hetero-arithmetic)
  */
 typedef struct{
-	char name[100];
-	int* values;
-	int* frequency;
-	double magnitude;
 	int cached;
-	int *contextSize;
+	char name[100];
+	int frequency;
+	double magnitude;
+	int contextSize;
+	int values[RIVSIZE];
 }denseRIV;
 
 /*RIVKey, holds global variables used under the hood, primarily for the lexicon
@@ -86,7 +85,7 @@ struct RIVData{
 	int h_tempBlock[TEMPSIZE];
 	int tempSize;
 	char lexName[255];
-	denseRIV RIVCache[CACHESIZE];
+	denseRIV* RIVCache[CACHESIZE];
 }static RIVKey;
 
 /* lexOpen is called to "open the lexicon", setting up for later calls to
@@ -120,14 +119,14 @@ void makeSparseLocations(unsigned char* word,  int *seeds, size_t seedCount);
  * which is what users should actually use.  lexPush, unlike fLexPush,
  * has cache logic under the hood for speed and harddrive optimization
  */
-int fLexPush(denseRIV RIVout);
+int fLexPush(denseRIV* RIVout);
 
 /* flexPull pulls data directly from a file and converts it (if necessary)
  * to a denseRIV.  function is called by "lexPull" which is what users 
  * should actually use.  lexPull, unlike FlexPull, has cache logic under
  * the hood for speed and harddrive optimization 
  */
-denseRIV fLexPull(FILE* lexWord);
+denseRIV* fLexPull(FILE* lexWord);
 
 /* mapI2D maps an "implicit RIV" that is, an array of index values, 
  * arranged by chronological order of generation (as per makesparseLocations)
@@ -262,12 +261,12 @@ void lexOpen(char* lexName){
 	action.sa_sigaction = signalSecure;
 	action.sa_flags = SA_SIGINFO;
 	for(int i=1; i<27; i++){
-		sigaction(11,&action,NULL);
+		sigaction(i,&action,NULL);
 	}
 	 
 
 	/* open a slot for a cache of dense RIVs, optimized for frequent accesses */
-	memset(RIVKey.RIVCache, 0, sizeof(denseRIV)*CACHESIZE);
+	memset(RIVKey.RIVCache, 0, sizeof(denseRIV*)*CACHESIZE);
 }
 void lexClose(){
 	
@@ -291,9 +290,9 @@ void makeSparseLocations(unsigned char* word,  int *locations, size_t count){
 	return;
 }
 
-int fLexPush(denseRIV RIVout){	
+int fLexPush(denseRIV* output){	
 	char pathString[200] = {0};
-
+	denseRIV RIVout = *output;
 	/* word data will be placed in a (new?) file under the lexicon directory
 	 * in a file named after the word itself */
 	sprintf(pathString, "%s/%s", RIVKey.lexName, RIVout.name);
@@ -309,8 +308,8 @@ int fLexPush(denseRIV RIVout){
 		/* smaller stored as sparse vector */
 
 		fwrite(&temp.count, 1, sizeof(size_t), lexWord);
-		fwrite(RIVout.frequency, 1, sizeof(int), lexWord);
-		fwrite(RIVout.contextSize, 1, sizeof(int), lexWord);
+		fwrite(&RIVout.frequency, 1, sizeof(int), lexWord);
+		fwrite(&RIVout.contextSize, 1, sizeof(int), lexWord);
 		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
 		fwrite(temp.locations, temp.count, sizeof(int), lexWord);
 		fwrite(temp.values, temp.count, sizeof(int), lexWord);
@@ -319,27 +318,27 @@ int fLexPush(denseRIV RIVout){
 		/* there's gotta be a better way to do this */
 		temp.count = 0;
 		fwrite(&temp.count, 1, sizeof(size_t), lexWord);
-		fwrite(RIVout.frequency, 1, sizeof(int), lexWord);
-		fwrite(RIVout.contextSize, 1, sizeof(int), lexWord);
+		fwrite(&RIVout.frequency, 1, sizeof(int), lexWord);
+		fwrite(&RIVout.contextSize, 1, sizeof(int), lexWord);
 		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
 		fwrite(RIVout.values, RIVSIZE, sizeof(int), lexWord);
 	}
 
 	fclose(lexWord);
-	free(RIVout.values);
+	free(output);
 	free(temp.locations);
 
 	return 0;
 }
 
-denseRIV fLexPull(FILE* lexWord){
-	denseRIV output = denseAllocate();
+denseRIV* fLexPull(FILE* lexWord){
+	denseRIV *output = calloc(1,sizeof(denseRIV));
 	size_t typeCheck;
 	/* get metadata for vector */
 	fread(&typeCheck, 1, sizeof(size_t), lexWord);
-	fread(output.frequency, 1, sizeof(int), lexWord);
-	fread(output.contextSize, 1, sizeof(int), lexWord);
-	fread(&(output.magnitude), 1, sizeof(float), lexWord);
+	fread(&output->frequency, 1, sizeof(int), lexWord);
+	fread(&output->contextSize, 1, sizeof(int), lexWord);
+	fread(&output->magnitude, 1, sizeof(float), lexWord);
 
 	/* first value stored is the value count if sparse, and 0 if dense */
 	if (typeCheck){
@@ -353,15 +352,15 @@ denseRIV fLexPull(FILE* lexWord){
 		fread(temp.locations, temp.count, sizeof(int), lexWord);
 		fread(temp.values, temp.count, sizeof(int), lexWord);
 
-		addS2D(output.values, temp);
+		addS2D(output->values, temp);
 		free(temp.locations);
 	}else{
 		/* typecheck is thrown away, just a flag in this case */
-		fread(output.values, RIVSIZE, sizeof(int), lexWord);
+		fread(output->values, RIVSIZE, sizeof(int), lexWord);
 	}
 
 
-	output.cached = 0;
+	output->cached = 0;
 
 	return output;
 
@@ -372,32 +371,27 @@ denseRIV fLexPull(FILE* lexWord){
 int cacheDump(){
 
 	int flag = 0;
-	denseRIV* cache_slider = RIVKey.RIVCache;
-	denseRIV* cache_stop = RIVKey.RIVCache+CACHESIZE;
-	while(cache_slider<cache_stop){
-		if((*cache_slider).cached){
 
-			flag += fLexPush(*cache_slider);
+	for(int i = 0; i < CACHESIZE; i++){
+		if(RIVKey.RIVCache[i]){
+
+			flag += fLexPush(RIVKey.RIVCache[i]);
 		}
-		else{
-		
-		}
-		cache_slider++;
 	}
 	return flag;
 }
 
-denseRIV denseAllocate(){
-	/* allocates a 0 vector */
-	denseRIV output;
-	output.values = (int*)calloc(RIVSIZE+2, sizeof(int));
-	/* for compact memory use, frequency is placed immediately after values */
-	output.frequency = output.values+RIVSIZE;
-	output.contextSize = output.frequency+1;
-	output.magnitude = 0;
-	output.cached = 0;
-	return output;
-}
+//~ denseRIV denseAllocate(){
+	//~ /* allocates a 0 vector */
+	//~ denseRIV output;
+	//~ output.values = (int*)calloc(RIVSIZE+2, sizeof(int));
+	//~ /* for compact memory use, frequency is placed immediately after values */
+	//~ output.frequency = output.values+RIVSIZE;
+	//~ output.contextSize = output.frequency+1;
+	//~ output.magnitude = 0;
+	//~ output.cached = 0;
+	//~ return output;
+//~ }
 
 /*TODO add a simplified free function*/
 void signalSecure(int signum, siginfo_t *si, void* arg){
