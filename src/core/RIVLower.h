@@ -5,7 +5,8 @@
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
-#include <math.h>
+//#include <math.h>
+#include <sys/stat.h>
 #include "RIVaccessories.h"
 /* RIVSIZE macro defines the dimensionality off the RIVs we will use
  * 25000 is the standard, but can be redefined specifically
@@ -153,7 +154,8 @@ int* addI2D(int* destination, int* locations, size_t seedCount);
 /* allocates a denseRIV filled with 0s
  */
 denseRIV denseAllocate();
-
+/* redefines signal behavior to protect cached data against seg-faults etc*/
+void signalSecure(int signum, siginfo_t *si, void* arg);
 /* begin definitions */
 
 int* addS2D(int* destination, sparseRIV input){// #TODO fix destination parameter vs calloc of destination
@@ -254,7 +256,7 @@ void lexOpen(char* lexName){
 		mkdir(lexName, 0777);
 	}	
 	strcpy(RIVKey.lexName, lexName);
-	/* open a slot at least large enough for worst case handling of
+	/* open a slot at least large enough for ;worst case handling of
 	 * sparse to dense conversion.  may be enlarged by filetoL2 functions */
 	struct sigaction action;
 	action.sa_sigaction = signalSecure;
@@ -398,6 +400,14 @@ denseRIV denseAllocate(){
 }
 
 /*TODO add a simplified free function*/
-
+void signalSecure(int signum, siginfo_t *si, void* arg){
+  if(cacheDump()){
+	  puts("cache dump failed, some lexicon data lost");
+  }else{
+	puts("cache dumped successfully");
+  }
+  signal(signum, SIG_DFL);
+  kill(getpid(), signum);
+}
 #endif
 

@@ -1,10 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-
-#include <setjmp.h>
-#include <signal.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -17,58 +12,40 @@
 //to all words found in these files. this is used to create a lexicon, or add to an existing one
 
 void fileGrind(FILE* textFile);
-void addS2Ds(denseRIV *denseSet, sparseRIV additive, int RIVCount);
-int checkDupe(denseRIV* RIVSet, char* word, int wordCount);
+void addContext(denseRIV lexRIV, sparseRIV context);
+int checkDupe(denseRIV* RIVSet, char* word, int vectorCount);
 void directoryGrind(char *rootString);
-void readdirContingency(int sigNumber);
 
-jmp_buf readdirRecov;
+
 int main(int argc, char *argv[]){
-	clock_t begintotal = clock();
-	lexOpen("lexicon");
 	char pathString[1000];
+
+	printf("made it here");
+	//we open the lexicon, if it does not yet exist, it will be created
+	lexOpen("lexicon");
+	
+	//we format the root directory, preparing to scan its contents
+	
 	strcpy(pathString, argv[1]);
 	strcat(pathString, "/");
-	struct stat st = {0};
+	//ensure that the targeted root directory exists
+	
+	struct stat st;
 	if(stat(pathString, &st) == -1) {
+		printf("directory doesn't seem to exist");
 		return 1;
 	}
-	
+	//we will scan the directory, adding all data to our lexicon, as seen inside
 	directoryGrind(pathString);
 
-	clock_t endtotal = clock();
-	double time_spent = (double)(endtotal - begintotal) / CLOCKS_PER_SEC;
-	printf("total time:%lf\n\n", time_spent);
+	//we close the lexicon again, ensuring all data is secured
 	lexClose();
 	return 0;
 }
 
-void addS2Ds(denseRIV *denseSet, sparseRIV additive, int RIVCount){
-	denseRIV *denseSet_slider = denseSet;
-	denseRIV *dense_stop = denseSet+RIVCount;
-
-
-
-	while(denseSet_slider<dense_stop){
-		addS2D((*denseSet_slider).values, additive);
-		*(denseSet_slider->contextSize) += additive.frequency;
-		denseSet_slider++;
-
-	}
-	
-}
-int checkDupe(denseRIV* RIVSet, char* word, int wordCount){
-	denseRIV* RIVStop = RIVSet+wordCount;
-	while(RIVSet<RIVStop){
-		if(!strcmp(word, RIVSet->name)){
-			return 1;
-		}
-		RIVSet++;
-	}
-	return 0;
-}
+//mostly a standard recursive Dirent-walk
 void directoryGrind(char *rootString){
-
+	/* *** begin Dirent walk *** */
 	char pathString[2000];
 	DIR *directory;
 	struct dirent *files = 0;
@@ -79,79 +56,108 @@ void directoryGrind(char *rootString){
 	}
 
 	while((files=readdir(directory))){
-		if(setjmp(readdirRecov)){
-			continue;
-		}
-
-		//printf("reclen: %d, d_name pointer: %p, firstDigit, %d", files->d_reclen,files->d_name,*(files->d_name));
+		
+		if(!files->d_name[0]) break;
 		while(*(files->d_name)=='.'){
 			files = readdir(directory);
 		}
-		//signal(SIGSEGV, signalSecure);
-
+		
+		
+		
 		if(files->d_type == DT_DIR){
 			strcpy(pathString, rootString);
 
 			strcat(pathString, files->d_name);
 			strcat(pathString, "/");
 			directoryGrind(pathString);
+			continue;
 		}
+		
+		
+		
 		strcpy(pathString, rootString);
 		strcat(pathString, files->d_name);
 		printf("%s\n", pathString);
-		FILE *input = fopen(pathString, "r+");
+/* *** end dirent walk, begin meat of function  *** */
+		
+		//check for non-txt files
+		char *fileEnding = pathString+strlen(pathString)-4
+		if(strcmp(fileEnding, ".txt")){
+			printf("skipped: %s\n", files->d_name); 
+			continue;
+		}
+		
+		//open a file within root directory
+		FILE *input = fopen(pathString, "r");
 		if(input){
+			//process this file and add it's data to lexicon
 			fileGrind(input);
+			
 			fclose(input);
 		}
 	}
 }
 
+//form context vector from contents of file, then add that vector to
+//all lexicon entries of the words contained
 void fileGrind(FILE* textFile){
-	sparseRIV aggregateRIV = fileToL2Clean(textFile);
+	//form a context vector.  "clean" indicates that it will ignore any word which
+	//contains unwanted characters
+	sparseRIV contextVector = fileToL2Clean(textFile);
 	fseek(textFile, 0, SEEK_SET);
 
-	int wordCount = 0;
-	denseRIV *RIVArray = (denseRIV*)malloc(aggregateRIV.frequency*sizeof(denseRIV));
-	char word[200];
-
+	//an array of denseRIVs, large enough to hold all vectors 
+	//(we don't yet know how many vectors there will be, so we make it big enough for the  maximum)
+	denseRIV lexiconRIV;
+	
+	char word[100] = {0};
 	while(fscanf(textFile, "%99s", word)){
-
+		//we ensure that each word exists, and is free of unwanted characters
 		if(feof(textFile)) break;
+		
 		if(!(*word))continue;
 
 		if(!isWordClean((char*)word)){
 			continue;
 		}
-		if(checkDupe(RIVArray, word, wordCount)){
-			continue;
+		
+		
+		//we pull the vector corresponding to each word from the lexicon
+		//if it's a new word, lexPull returns a 0 vector
+		lexiconRIV= lexPull(word);
+
+		//we add the context of this file to this wordVector
+		addContext(lexiconRIV, contextVector);
+		
+		//we log that this word has been encountered one more time
+		*lexiconRIV.frequency += 1;
+		
+		//and finally we push it back to the lexicon for permanent storage
+		lexPush(lexiconRIV);
+		
+	}
+	free(contextVector.locations);
+}
+
+void addContext(denseRIV lexRIV, sparseRIV context){
+		
+		//add context to the lexRIV, (using sparse-dense vector comparison)
+		addS2D(lexRIV.values, context);
+		
+		//log the "size" of the vector which was added
+		//this is not directly necessary, but is useful metadata for some analises
+		*lexRIV.contextSize += context.frequency;
+		
+}
+
+int checkDupe(denseRIV* RIVSet, char* word, int vectorCount){
+	denseRIV* RIVStop = RIVSet+vectorCount;
+	while(RIVSet<RIVStop){
+		if(!strcmp(word, RIVSet->name)){
+			return 1;
 		}
-		RIVArray[wordCount] = lexPull(word);
-
-		if(!*((RIVArray[wordCount].name))) break;
-
-		*(RIVArray[wordCount].frequency)+= 1;;
-		//printf("%s, %d, %d\n", RIVArray[wordCount].name, *(RIVArray[wordCount].frequency), *thing);
-
-		wordCount++;
-
+		RIVSet++;
 	}
-	//printf("%d\n", wordCount);
-
-	addS2Ds(RIVArray, aggregateRIV, wordCount);
-	denseRIV* RIVArray_slider = RIVArray;
-	denseRIV* RIVArray_stop = RIVArray+wordCount;
-	while(RIVArray_slider<RIVArray_stop){
-
-		lexPush(*RIVArray_slider);
-		RIVArray_slider++;
-	}
-	free(RIVArray);
-	free(aggregateRIV.locations);
-
+	return 0;
 }
-void readdirContingency(int sigNumber){
-	("readdir segfaulted, trying to recover");
-	longjmp(readdirRecov, 1);
-
-}
+	

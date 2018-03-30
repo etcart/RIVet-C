@@ -80,7 +80,8 @@ with open(sourceString, 'U') as fileIn:
                 for tempWord in line.split():
                     # remove extraneous characters and lower-case
                     word = cleanWord(tempWord)
-
+                    if word in blacklist:
+                        continue
                     if not word:
                         continue
                     # is it a word?
