@@ -5,7 +5,6 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <error.h>
-#define CACHESIZE 100000
 #include "../../RIVtools.h"
 
 //this program reads a directory full of files, and adds all context vectors (considering file as context)
