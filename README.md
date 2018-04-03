@@ -32,6 +32,7 @@ comparisons
 NONE!
 * Clone the repo
 * #include "pathTo/RIVtools.h"
+* compile with -lm flag
 * Get started!
 
 
