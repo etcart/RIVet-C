@@ -46,7 +46,9 @@ sparseRIV text2L2(char *text);
 
 /* calculates the magnitude of a sparseVector */ //TODO contain integer overflow in square process
 double getMagnitudeSparse(sparseRIV input);
-
+/* same for denseVector */
+double getMagnitudeDense(denseRIV *input);
+	
 sparseRIV text2L2(char *text){
 	int wordCount = 0;
 	unsigned char word[100] = {0};
@@ -84,8 +86,7 @@ sparseRIV text2L2(char *text){
 
 	/* frequency records the number of words in this file, untill frequency
 	 * is needed to hold some more useful data point */
-	output.frequency = wordCount;
-	output.boolean = 1;
+	output.contextSize = wordCount;
 	return output;
 }
 
@@ -122,9 +123,8 @@ sparseRIV fileToL2(FILE *data){
 	sparseRIV output = consolidateD2S(denseTemp);
 
 	/* frequency records the number of words in this file */
-	output.frequency = wordCount;
-	output.boolean = 1;
-
+	output.contextSize = wordCount;
+	fseek(data, 0, SEEK_SET);
 	return output;
 }
 
@@ -164,8 +164,8 @@ sparseRIV fileToL2Clean(FILE *data){
 	sparseRIV output = consolidateD2S(denseTemp);
 
 	/* frequency records the number of words in this file */
-	output.frequency = locationCount/NONZEROS;
-	output.boolean = 1;
+	output.contextSize = locationCount/NONZEROS;
+	
 	return output;
 }
 
@@ -182,7 +182,7 @@ void aggregateWord2D(denseRIV destination, char* word){
 
 double cosCompare(denseRIV baseRIV, sparseRIV comparator){
 
-	int dot = 0;
+	long long unsigned int dot = 0;
 	int n = comparator.count;
 	while(n){
 		n--;
@@ -210,6 +210,18 @@ double getMagnitudeSparse(sparseRIV input){
 	return sqrt(temp);
 }
 
+double getMagnitudeDense(denseRIV *input){
+	size_t temp = 0;
+	int *values = input->values;
+	int *values_stop = values+RIVSIZE;
+	while(values<values_stop){
+		if(*values){
+			temp += (*values)*(*values);
+		}
+		values++;
+	}
+	return sqrt(temp);
+}
 denseRIV* lexPull(char* word){
 	#if CACHESIZE > 0
 
@@ -290,7 +302,7 @@ int lexPush(denseRIV* RIVout){
 
 sparseRIV normalizeFloored(denseRIV input, int factor){
 	float divisor = (float)factor/(input.contextSize);
-//	printf("in norm: %d, %d, %f\n", *input.contextSize, factor, divisor);
+
 	int* locations = RIVKey.h_tempBlock;
 	int* values = locations+RIVSIZE;
 	int count = 0;
@@ -309,7 +321,6 @@ sparseRIV normalizeFloored(denseRIV input, int factor){
 	output.count = count;
 	output.magnitude = getMagnitudeSparse(output);
 	output.contextSize = input.contextSize;
-	output.frequency = input.frequency;
 
 	return output;
 }
@@ -336,7 +347,6 @@ sparseRIV normalize(denseRIV input, int factor){
 	output.magnitude = getMagnitudeSparse(output);
 	output.contextSize = input.contextSize;
 	output.frequency = input.frequency;
-	
 	return output;
 }
 

@@ -41,21 +41,24 @@ NONE!
 In this code, we will add the context data of one text file to each word
 that it contains, adding that to the knowledge pool of the lexicon:
 ```C
-#include "RIVtools.h"
-
+include "RIVtools.h"
+int main(){
 	//we open the lexicon
 	lexOpen("lexicon");
 	
+	
 	FILE* testFile = fopen("testFile.txt", "r");
-	
+	if(!testFile){
+		puts("testFile does not exist");
+		return 1;
+	}	
 	//we create a context Vector
-	sparseRIV context = file2L2(testFile);
-	
+	sparseRIV context = fileToL2(testFile);
 	int wordCount = context.frequency;
 	char word[100];
 	
 	//create an array of dense vectors
-	denseRIV fileRIVs[wordCount];
+	denseRIV *lexRIV;
 	
 	for( int i=0; i<wordCount; i++){
 		
@@ -63,17 +66,20 @@ that it contains, adding that to the knowledge pool of the lexicon:
 		fscanf(testFile, "%99s", word);
 		
 		//pull a vector from the lexicon
-		fileRIVs[i] = lexPull(word);
+		lexRIV = lexPull(word);
 		
 		//add context to the lexicon vector
-		addS2D(fileRIVs[i].values, context);
+		addS2D(lexRIV->values, context);
 		
 		//push the vector back to the lexicon for permanent storage
-		lexPush(word);
+		lexPush(lexRIV);
 	}
 	//always the lexicon must be closed
 	lexClose();
 	fclose(testFile);
+	return 0;
+}
+
 ```
 For this style of reading, to get good, long-term accuracy, it's important
 to feed it stemmed, cleaned plaintext to reduce noise.  There is an included
@@ -85,19 +91,23 @@ In this code we compare two words in the lexicon, to see how the system understa
 
 ```C
 #include "RIVtools.h"
-
+int main(){
 	//we open the lexicon
-	lexOpen("lexicon");
+	lexOpen("/home/amberhosen/code/lexica/lexicon2-25");
 	
 	//we pull the two words we want to compare from the lexicon
-	denseRIV firstWordDense = lexPull("denmark");
-	denseRIV secondWordDense = lexPull("norway");
+	denseRIV* firstWordDense = lexPull("denmark");
+	denseRIV* secondWordDense = lexPull("norway");
 	
 	//we convert one of the two to a sparse RIV
-	sparseRIV firstWordSparse = consolidateD2S(firstWordDense);
-	
+	sparseRIV firstWordSparse = consolidateD2S(firstWordDense->values);
+
+	//we get the magnitudes of these two vectors
+	firstWordSparse.magnitude = getMagnitudeSparse(firstWordSparse);
+	secondWordDense->magnitude = getMagnitudeDense(secondWordDense);
+
 	//we take the cosine of the angle between these two
-	double cosine = cosCompare(secondWordDense, firstWordSparse);
+	double cosine = cosCompare(*secondWordDense, firstWordSparse);
 	
 	//from most well-formed lexica, we find that these are 
 	//>0,99 cosine similarity
@@ -105,4 +115,6 @@ In this code we compare two words in the lexicon, to see how the system understa
 	
 	//always we must close the lexicon
 	lexClose();
+	return 0;
+}	
 ```	

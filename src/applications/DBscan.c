@@ -6,10 +6,10 @@
 #define RIVSIZE 50000
 #define CACHESIZE 0
 #define EPSILON 0.95
-#define MINPOINTS 20
+#define MINPOINTS 2
 #define UNCHECKED 0
 #define NOISE -1
-#define MINSIZE 3000
+#define MINSIZE 2000
 
 
 #include "../RIVtools.h"
@@ -19,10 +19,10 @@ struct DBnode{
 	int* indexes;
 	int indexCount;
 	int status;
-}*DBset;
+};
 
 
-void DBdive(int C, int i);
+void DBdive(struct DBnode *DBset, int C, int i);
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
 
 int main(int argc, char *argv[]){
@@ -43,18 +43,15 @@ int main(int argc, char *argv[]){
 	directoryToL2s(rootString, &fileRIVs, &fileCount);
 	printf("fileCount: %d\n", fileCount);
 
-	sparseRIV* fileRIVs_slider = fileRIVs;
-	sparseRIV* fileRIVs_stop = fileRIVs+fileCount;
-	DBset = malloc(fileCount*sizeof(struct DBnode));
-	struct DBnode* DBset_slider = DBset;
-	while(fileRIVs_slider <fileRIVs_stop){
-		(*fileRIVs_slider).magnitude = getMagnitudeSparse(*fileRIVs_slider);
-		(*DBset_slider).RIV = *fileRIVs_slider;
-		(*DBset_slider).indexes = malloc(sizeof(int));
-		(*DBset_slider).indexCount = 0;
-		(*DBset_slider++).status = 0;
-		fileRIVs_slider++;
+	struct DBnode DBset[fileCount];
 
+	for(int i = 0; i < fileCount; i++){
+		fileRIVs[i].magnitude = getMagnitudeSparse(fileRIVs[i]);
+		DBset[i].RIV = fileRIVs[i];
+		DBset[i].indexes = malloc(sizeof(int));
+		DBset[i].indexCount = 0;
+		DBset[i].status = UNCHECKED;
+		
 	}
 	free(fileRIVs);
 
@@ -62,11 +59,11 @@ int main(int argc, char *argv[]){
 	float cosine;
 
 	denseRIV baseDense;
-	baseDense.values = malloc(RIVSIZE*sizeof(int));
+	
 
 	for(int i=0; i<fileCount; i++){
 		memset(baseDense.values, 0, RIVSIZE*sizeof(int));
-		baseDense.values = addS2D(baseDense.values, DBset[i].RIV);
+		addS2D(baseDense.values, DBset[i].RIV);
 		baseDense.magnitude = DBset[i].RIV.magnitude;
 
 		for(int j=i+1; j<fileCount; j++){
@@ -83,15 +80,18 @@ int main(int argc, char *argv[]){
 		}
 	}
 	int C = 0;
-	printf("got here\n");
 	for(int i=0; i<fileCount; i++){
 		if(DBset[i].status) continue;
 		if(DBset[i].indexCount <MINPOINTS){
 			DBset[i].status = NOISE;
+			continue;
 		}
 		C++;
 		DBset[i].status = C;
-		DBdive(C, i);
+		for(int j=0; j<DBset[i].indexCount; j++){
+			printf("%s//%d, ", DBset[DBset[i].indexes[j]].RIV.name, C);
+		}
+		DBdive(DBset, C, i);
 	}
 
 
@@ -105,18 +105,18 @@ int main(int argc, char *argv[]){
 
 return 0;
 }
-void DBdive(int C, int i){
-	printf("root: %s\n", DBset[i].RIV.name);
+void DBdive(struct DBnode *DBset, int C, int i){
+	printf("\n\nroot: %s, %d, %lf\n", DBset[i].RIV.name, DBset[i].RIV.frequency, DBset[i].RIV.magnitude);
 	struct DBnode *DBnet = malloc(sizeof(struct DBnode));
 	DBnet[0] = DBset[i];
 	int nodeCount = 1;
-	for(int j=0; j<nodeCount; j++){
-		for(int k=0; k<DBnet[j].indexCount;k++){
+	for(int j = 0; j < nodeCount; j++){
+		for(int k = 0; k < DBnet[j].indexCount; k++){
 			int index = DBnet[j].indexes[k];
-			if(DBset[index].status>0) continue;
-			printf(">>%s\n", DBset[index].RIV.name);
+			if(DBset[index].status == C) continue;
+			printf(">>%s, %d, %lf\n", DBset[index].RIV.name, DBset[index].RIV.frequency, DBset[index].RIV.magnitude);
 			DBset[index].status = C;
-			if(DBset[index].indexCount> MINPOINTS){
+			if(DBset[index].indexCount > MINPOINTS){
 				DBnet = realloc(DBnet, (nodeCount+1)*sizeof(struct DBnode));
 				
 				DBnet[nodeCount++] = DBset[index];
@@ -147,16 +147,17 @@ void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
 			strcat(pathString, "/");
 			directoryToL2s(pathString, fileRIVs, fileCount);
 		}
-		denseRIV temp = lexPull(files->d_name);
-		if(*temp.frequency >MINSIZE){
+		//printf("pulling: %s\n", files->d_name);
+		denseRIV* temp = lexPull(files->d_name);
+		if(temp->frequency >MINSIZE){
 			(*fileRIVs) = (sparseRIV*)realloc((*fileRIVs), ((*fileCount)+1)*sizeof(sparseRIV));
 
-			(*fileRIVs)[(*fileCount)] = normalize(temp, 500);
+			(*fileRIVs)[(*fileCount)] = normalize(*temp, 500);
 
 			strcpy((*fileRIVs)[(*fileCount)].name, files->d_name);
 			(*fileCount)++;
 		}
-		free(temp.values);
+		free(temp);
 	}
 }
 

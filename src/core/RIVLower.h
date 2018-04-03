@@ -58,10 +58,9 @@ typedef struct{
 	int *values;
 	int *locations;
 	size_t count;
-	int frequency;
 	double magnitude;
-	int boolean;
 	int contextSize;
+	int frequency;
 }sparseRIV;
 /* the denseRIV is a RIV form optimized for overwhelmingly non-0 vectors
  * this is rarely the case, but its primary use is for performing vector
@@ -150,9 +149,6 @@ int cacheDump();
  */
 int* addI2D(int* destination, int* locations, size_t seedCount);
 
-/* allocates a denseRIV filled with 0s
- */
-denseRIV denseAllocate();
 /* redefines signal behavior to protect cached data against seg-faults etc*/
 void signalSecure(int signum, siginfo_t *si, void* arg);
 /* begin definitions */
@@ -257,7 +253,7 @@ void lexOpen(char* lexName){
 	strcpy(RIVKey.lexName, lexName);
 	/* open a slot at least large enough for ;worst case handling of
 	 * sparse to dense conversion.  may be enlarged by filetoL2 functions */
-	struct sigaction action;
+	struct sigaction action = {0};
 	action.sa_sigaction = signalSecure;
 	action.sa_flags = SA_SIGINFO;
 	for(int i=1; i<27; i++){
@@ -381,17 +377,6 @@ int cacheDump(){
 	return flag;
 }
 
-//~ denseRIV denseAllocate(){
-	//~ /* allocates a 0 vector */
-	//~ denseRIV output;
-	//~ output.values = (int*)calloc(RIVSIZE+2, sizeof(int));
-	//~ /* for compact memory use, frequency is placed immediately after values */
-	//~ output.frequency = output.values+RIVSIZE;
-	//~ output.contextSize = output.frequency+1;
-	//~ output.magnitude = 0;
-	//~ output.cached = 0;
-	//~ return output;
-//~ }
 
 /*TODO add a simplified free function*/
 void signalSecure(int signum, siginfo_t *si, void* arg){
@@ -403,5 +388,15 @@ void signalSecure(int signum, siginfo_t *si, void* arg){
   signal(signum, SIG_DFL);
   kill(getpid(), signum);
 }
+sparseRIV* sparseAllocateFormatted(){
+	sparseRIV* output = (sparseRIV*)calloc(1, sizeof(sparseRIV));
+	
+	
+	
+	
+	return output;
+}
+	
+
 #endif
 

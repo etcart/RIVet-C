@@ -103,7 +103,6 @@ void fileGrind(FILE* textFile){
 	//form a context vector.  "clean" indicates that it will ignore any word which
 	//contains unwanted characters
 	sparseRIV contextVector = fileToL2Clean(textFile);
-	fseek(textFile, 0, SEEK_SET);
 
 	//an array of denseRIVs, large enough to hold all vectors 
 	//(we don't yet know how many vectors there will be, so we make it big enough for the  maximum)
@@ -145,7 +144,7 @@ void addContext(denseRIV* lexRIV, sparseRIV context){
 		
 		//log the "size" of the vector which was added
 		//this is not directly necessary, but is useful metadata for some analises
-		lexRIV->contextSize += context.frequency;
+		lexRIV->contextSize += context.contextSize;
 		
 }
 
