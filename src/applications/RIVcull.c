@@ -12,7 +12,7 @@
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
 
 int main(int argc, char *argv[]){
-
+	
 	int fileCount = 0;
 	
 	//initializes the fileRIVs array to be reallocced by later function

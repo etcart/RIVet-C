@@ -1,12 +1,18 @@
+/* this DB scan algorithm is not meant to be an example of an easily written 
+ * program. rather it is a useful tool that can be used to validate the contents
+ * of a lexicon.  it will identify, using a density based algorithm
+ * clusters of vectors.  if the lexicon is well formed, these clusters should
+ * be numerous, as well as containing well related words */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
 #include <time.h>
 //RIVSIZE macro must be set to the size of the RIVs in the lexicon
-#define RIVSIZE 50000
+#define RIVSIZE 75000
 #define CACHESIZE 0
-#define EPSILON 0.95
-#define MINPOINTS 2
+#define EPSILON 0.96
+#define MINPOINTS 1
 #define UNCHECKED 0
 #define NOISE -1
 #define MINSIZE 2000
@@ -14,6 +20,11 @@
 
 #include "../RIVtools.h"
 
+/* the node holds a vector, and metadata:
+ * -indexes will hold the array indexes of its neighbors
+ * -indexCount will hold the number of neighbors
+ * -status will hold its cluster, either a cluster number or "unchecked"
+ */
 struct DBnode{
 	sparseRIV RIV;
 	int* indexes;
@@ -21,7 +32,7 @@ struct DBnode{
 	int status;
 };
 
-
+void intercompare(struct DBnode* DBset, int nodeCount);
 void DBdive(struct DBnode *DBset, int C, int i);
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
 
@@ -34,7 +45,7 @@ int main(int argc, char *argv[]){
 	int fileCount = 0;
 	
 	sparseRIV *fileRIVs = (sparseRIV*) malloc(1*sizeof(sparseRIV));
-	char rootString[2000];
+	char rootString[1000];
 	
 	lexOpen(argv[1]);
 	strcpy(rootString, argv[1]);
@@ -42,43 +53,27 @@ int main(int argc, char *argv[]){
 
 	directoryToL2s(rootString, &fileRIVs, &fileCount);
 	printf("fileCount: %d\n", fileCount);
-
+	/* an array of nodes, one for each vector */
 	struct DBnode DBset[fileCount];
-
+	
+	/* fill the node array with vectors and initialize metadata */
 	for(int i = 0; i < fileCount; i++){
 		fileRIVs[i].magnitude = getMagnitudeSparse(fileRIVs[i]);
 		DBset[i].RIV = fileRIVs[i];
+		/* a single malloc for later realloc'ing */
 		DBset[i].indexes = malloc(sizeof(int));
 		DBset[i].indexCount = 0;
 		DBset[i].status = UNCHECKED;
 		
 	}
+	/* fileRIVs was only temporary */
 	free(fileRIVs);
 
 	clock_t beginnsquared = clock();
-	float cosine;
 
-	denseRIV baseDense;
+	intercompare(DBset, fileCount);
+
 	
-
-	for(int i=0; i<fileCount; i++){
-		memset(baseDense.values, 0, RIVSIZE*sizeof(int));
-		addS2D(baseDense.values, DBset[i].RIV);
-		baseDense.magnitude = DBset[i].RIV.magnitude;
-
-		for(int j=i+1; j<fileCount; j++){
-				cosine = cosCompare(baseDense, DBset[j].RIV);
-
-
-			if(cosine>EPSILON){
-
-				DBset[i].indexes = realloc(DBset[i].indexes, (DBset[i].indexCount+1)*sizeof(int));
-				DBset[i].indexes[DBset[i].indexCount++] = j;
-				DBset[j].indexes = realloc(DBset[j].indexes, (DBset[j].indexCount+1)*sizeof(int));
-				DBset[j].indexes[DBset[j].indexCount++] = i;
-			}
-		}
-	}
 	int C = 0;
 	for(int i=0; i<fileCount; i++){
 		if(DBset[i].status) continue;
@@ -88,9 +83,7 @@ int main(int argc, char *argv[]){
 		}
 		C++;
 		DBset[i].status = C;
-		for(int j=0; j<DBset[i].indexCount; j++){
-			printf("%s//%d, ", DBset[DBset[i].indexes[j]].RIV.name, C);
-		}
+
 		DBdive(DBset, C, i);
 	}
 
@@ -113,7 +106,13 @@ void DBdive(struct DBnode *DBset, int C, int i){
 	for(int j = 0; j < nodeCount; j++){
 		for(int k = 0; k < DBnet[j].indexCount; k++){
 			int index = DBnet[j].indexes[k];
-			if(DBset[index].status == C) continue;
+			if(DBset[index].status == C){
+				
+				continue;
+			}
+			if(DBset[index].status>0){
+				printf(">>");
+			}
 			printf(">>%s, %d, %lf\n", DBset[index].RIV.name, DBset[index].RIV.frequency, DBset[index].RIV.magnitude);
 			DBset[index].status = C;
 			if(DBset[index].indexCount > MINPOINTS){
@@ -125,7 +124,8 @@ void DBdive(struct DBnode *DBset, int C, int i){
 	}
 	free(DBnet);
 }
-
+/* fileRIVs and fileCount are accessed as pointers, so that we can find them changed outside this function
+ */
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
 
 	char pathString[2000];
@@ -141,19 +141,16 @@ void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
 		if(*(files->d_name) == '.') continue;
 
 		if(files->d_type == DT_DIR){
-			strcpy(pathString, rootString);
-
-			strcat(pathString, files->d_name);
-			strcat(pathString, "/");
-			directoryToL2s(pathString, fileRIVs, fileCount);
+			/* the lexicon should not have valid sub-directories */
+			continue;
 		}
-		//printf("pulling: %s\n", files->d_name);
+		
 		denseRIV* temp = lexPull(files->d_name);
+		/* if the vector has been encountered more than MINSIZE times
+		 * then it should be statistically significant, and useful */
 		if(temp->frequency >MINSIZE){
 			(*fileRIVs) = (sparseRIV*)realloc((*fileRIVs), ((*fileCount)+1)*sizeof(sparseRIV));
-
 			(*fileRIVs)[(*fileCount)] = normalize(*temp, 500);
-
 			strcpy((*fileRIVs)[(*fileCount)].name, files->d_name);
 			(*fileCount)++;
 		}
@@ -161,4 +158,28 @@ void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
 	}
 }
 
+void intercompare(struct DBnode* DBset, int nodeCount){
+	double cosine;
+	denseRIV baseDense;
+	for(int i=0; i<nodeCount; i++){
+		/* map the RIV in question to a dense for comparison */
+		memset(baseDense.values, 0, RIVSIZE*sizeof(int));
+		addS2D(baseDense.values, DBset[i].RIV);
+		baseDense.magnitude = DBset[i].RIV.magnitude;
+		/* for each previous vector */
+		for(int j=i+1; j<nodeCount; j++){
+				/* get cosine distance to that vector */
+				cosine = cosCompare(baseDense, DBset[j].RIV);
 
+			/* if this pair is close enough */
+			if(cosine>EPSILON){
+				
+				/* add the pairing to each node's list of neighbors */
+				DBset[i].indexes = realloc(DBset[i].indexes, (DBset[i].indexCount+1)*sizeof(int));
+				DBset[i].indexes[DBset[i].indexCount++] = j;
+				DBset[j].indexes = realloc(DBset[j].indexes, (DBset[j].indexCount+1)*sizeof(int));
+				DBset[j].indexes[DBset[j].indexCount++] = i;
+			}
+		}
+	}
+}

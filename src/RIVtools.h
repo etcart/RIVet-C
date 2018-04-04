@@ -1,5 +1,6 @@
 #ifndef RIVTOOLS_H_
 #define RIVTOOLS_H_
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,12 +9,16 @@
 #include "core/RIVaccessories.h"
 
 
-
-/* lexPush writes a denseRIV to a file for permanent storage */
+/* both lexPush and lexPull must be called *after* the lexOpen() function
+ * and after using them the lexClose() function must be called to ensure
+ * data security */
+ 
+/* lexPush writes a denseRIV to the lexicon for permanent storage */
 int lexPush(denseRIV* RIVout);
-/* lexPull reads an existing lexicon entry (under directory "lexicon")
- * and creates a denseRIV with those attributes.
+/* lexPull reads a denseRIV from the lexicon, under "word"
  * if the file does not exist, it creates a 0 vector with the name of word
+ * lexPull returns a denseRIV *pointer* because its data must be tracked 
+ * globally for key optimizations
  */
 denseRIV* lexPull(char* word);
 
@@ -29,27 +34,27 @@ sparseRIV fileToL2(FILE *input);
  */
 sparseRIV fileToL2Clean(FILE *data);
 
+/* like fileToL2 but takes a block of text */
+sparseRIV textToL2(char *text);
+
 /*cosine determines the "similarity" between two RIVs. */
 double cosCompare(denseRIV baseRIV, sparseRIV comparator);
 
-/*currently unused */
-sparseRIV wordtoL2(char* word);
-
-sparseRIV normalizeFloored(denseRIV input, int factor);
-
+/*used for analysis of lexicon vectors (not simply accumulation)
+ * to avoid overflow of even a 64 bit integer, vectors must be normalized
+ * this is an experimental approximation of true normal, which should yield 
+ * some extra data about the nature of this word's context
+ */
 sparseRIV normalize(denseRIV input, int factor);
 
 
-int roundMultiply(int base, float divisor);
-/* like fileToL2 but takes a block of text */
-sparseRIV text2L2(char *text);
 
 /* calculates the magnitude of a sparseVector */ //TODO contain integer overflow in square process
 double getMagnitudeSparse(sparseRIV input);
 /* same for denseVector */
-double getMagnitudeDense(denseRIV *input);
+double getMagnitudeDense(denseRIV *input); //TODO consolidate these into one function
 	
-sparseRIV text2L2(char *text){
+sparseRIV textToL2(char *text){
 	int wordCount = 0;
 	unsigned char word[100] = {0};
 
@@ -65,7 +70,6 @@ sparseRIV text2L2(char *text){
 		if(!displacement){
 			break;
 		}
-
 		if(!(*word)){
 			break;
 		}
@@ -84,8 +88,7 @@ sparseRIV text2L2(char *text){
 	addI2D(denseTemp, locations, locationCount);
 	sparseRIV output = consolidateD2S(denseTemp);
 
-	/* frequency records the number of words in this file, untill frequency
-	 * is needed to hold some more useful data point */
+	/* contextSize stores the number of words read */
 	output.contextSize = wordCount;
 	return output;
 }
@@ -93,8 +96,8 @@ sparseRIV text2L2(char *text){
 sparseRIV fileToL2(FILE *data){
 	unsigned char word[100] = {0};
 
-	/* locations (implicit RIV) are temp stored in temp block, and moved
-	 * to permanent home in consolidation */
+	/* locations (implicit RIV) are temporarily stored in temp block, 
+	 * and moved to permanent home in consolidation */
 	int *locations = RIVKey.h_tempBlock;
 	int locationCount = 0;
 	int denseTemp[RIVSIZE] = {0};
@@ -122,7 +125,7 @@ sparseRIV fileToL2(FILE *data){
 	addI2D(denseTemp, locations, locationCount);
 	sparseRIV output = consolidateD2S(denseTemp);
 
-	/* frequency records the number of words in this file */
+	/* contextSize records the number of words in this file */
 	output.contextSize = wordCount;
 	fseek(data, 0, SEEK_SET);
 	return output;
@@ -165,33 +168,23 @@ sparseRIV fileToL2Clean(FILE *data){
 
 	/* frequency records the number of words in this file */
 	output.contextSize = locationCount/NONZEROS;
-	
+	fseek(data, 0, SEEK_SET);
 	return output;
-}
-
-void aggregateWord2D(denseRIV destination, char* word){
-
-
-	srand(wordtoSeed((unsigned char*)word));
-	for(int i=0; i<NONZEROS; i++){
-
-		destination.values[(rand()%RIVSIZE)] +=1;
-		destination.values[(rand()%RIVSIZE)] -= 1;
-	}
 }
 
 double cosCompare(denseRIV baseRIV, sparseRIV comparator){
 
-	long long unsigned int dot = 0;
-	int n = comparator.count;
-	while(n){
-		n--;
+	long long int dot = 0;
+	int* locations_stop = comparator.locations+comparator.count;
+	int* locations_slider = comparator.locations;
+	int* values_slider = comparator.values;
+	while(locations_slider<locations_stop){
+
 		/* we calculate the dot-product to derive the cosine 
 		 * comparing sparse to dense by index*/
-		//dot += values[i]*baseRIV.values[locations[i]];
-		dot += comparator.values[n] * baseRIV.values[comparator.locations[n]];
-
-		//printf("%d, %d, %d\n",baseRIV.values[comparator.locations[n]],comparator.values[n] , n);
+		dot += *values_slider * baseRIV.values[*locations_slider];
+		locations_slider++;
+		values_slider++;
 
 	}
 	/*dot divided by product of magnitudes */
@@ -204,9 +197,11 @@ double getMagnitudeSparse(sparseRIV input){
 	int *values = input.values;
 	int *values_stop = values+input.count;
 	while(values<values_stop){
+		/* we sum the squares of all elements */
 		temp += (*values)*(*values);
 		values++;
 	}
+	/* we take the root of that sum */
 	return sqrt(temp);
 }
 
@@ -261,8 +256,8 @@ denseRIV* lexPull(char* word){
 int lexPush(denseRIV* RIVout){
 	#if CACHESIZE == 0
 	/* if there is no cache, simply push to file */
-	fLexPush(RIVout);
-	return 0;
+	return fLexPush(RIVout);
+	
 	#else /* CACHESIZE != 0 */
 
 	/* if our RIV was cached, there are two options
@@ -272,96 +267,74 @@ int lexPush(denseRIV* RIVout){
 	if(RIVout->cached){
 		return 0;
 	}
-
+	
+	/* find the cache-slot where this word belongs */
 	srand(wordtoSeed((unsigned char*)RIVout->name));
 	int hash = rand()%CACHESIZE;
-
+	
+	/* if there is no word in this cache slot */
 	if(!RIVKey.RIVCache[hash]){
-		/* if there is no word in this cache slot, push to cache instead of file */
+		/* push to cache instead of file */
 		RIVKey.RIVCache[hash] = RIVout;
 		RIVKey.RIVCache[hash]->cached = 1;
 		return 0;
 	/*if the current RIV is more frequent than the RIV holding its slot */
 	}else if(RIVout->frequency > RIVKey.RIVCache[hash]->frequency ){
-		/* push the current cache entry to a file */
+		/* push the lower frequency cache entry to a file */
 		int diag = fLexPush(RIVKey.RIVCache[hash]);
-		/* push the current RIV to cache */
+		/* replace this cache-slot with the current vector */
 
 		RIVKey.RIVCache[hash] = RIVout;
 		RIVKey.RIVCache[hash]->cached = 1;
+		
+		/* diag will be 0 if pushing went according to plan */
 		return diag;
 	}else{
 		/* push current RIV to file */
-		fLexPush(RIVout);
+		return fLexPush(RIVout);
 	}
-	return 0;
+	return 1;
 	#endif /* CACHESIZE == 0 */
 
 }
 
 
-sparseRIV normalizeFloored(denseRIV input, int factor){
-	float divisor = (float)factor/(input.contextSize);
-
-	int* locations = RIVKey.h_tempBlock;
-	int* values = locations+RIVSIZE;
-	int count = 0;
-	for(int i=0; i<RIVSIZE; i++){
-		if(!input.values[i]) continue;
-		locations[count] = i;
-		values[count]= input.values[i]*divisor;
-		if(values[count])count++;
-	}
-	sparseRIV output;
-	output.locations = (int*) malloc(count*2*sizeof(int));
-	output.values = output.locations+count;
-	memcpy(output.locations, locations, count*sizeof(int));
-	memcpy(output.values, values, count*sizeof(int));
-	strcpy(output.name, input.name);
-	output.count = count;
-	output.magnitude = getMagnitudeSparse(output);
-	output.contextSize = input.contextSize;
-
-	return output;
-}
-
 sparseRIV normalize(denseRIV input, int factor){
-	float divisor = (float)factor/(input.contextSize);
-//	printf("in norm: %d, %d, %f\n", *input.contextSize, factor, divisor);
-	int* locations = RIVKey.h_tempBlock;
+	/* multiplier is the scaling factor we need to bring our vector to the right size */
+	float multiplier = (float)factor/(input.contextSize);
+
+	/* write to temp slot, data will go to a permanent home lower in function */
+	int* locations = RIVKey.h_tempBlock+RIVSIZE;
 	int* values = locations+RIVSIZE;
+	
 	int count = 0;
 	for(int i=0; i<RIVSIZE; i++){
+		/* if this point is 0, skip it */
 		if(!input.values[i]) continue;
+		
+		/* record position and value in the forming sparse vector */
 		locations[count] = i;
-		values[count]= roundMultiply(input.values[i], divisor);
+		values[count]= round(input.values[i]*multiplier);
+		
+		/* drop any 0 values */
 		if(values[count])count++;
 	}
 	sparseRIV output;
+	output.count = count;
+	/* for memory conservation, both datasets are put inline with each other */
 	output.locations = (int*) malloc(count*2*sizeof(int));
 	output.values = output.locations+count;
+	
+	/* copy the data from tempBlock into permanent home */
 	memcpy(output.locations, locations, count*sizeof(int));
 	memcpy(output.values, values, count*sizeof(int));
+	
+	/* carry metadata */
 	strcpy(output.name, input.name);
-	output.count = count;
 	output.magnitude = getMagnitudeSparse(output);
 	output.contextSize = input.contextSize;
 	output.frequency = input.frequency;
 	return output;
 }
-
-int roundMultiply(int base, float divisor){
-	float temp = base*divisor;
-	int output = temp*2;
-	if (output%2){
-		output/=2;
-		output+=1;
-	}else{
-		output/=2;
-	}
-	return output;
-
-}
-
 
 #endif
