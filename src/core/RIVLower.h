@@ -87,18 +87,6 @@ struct RIVData{
 	denseRIV* RIVCache[CACHESIZE];
 }static RIVKey;
 
-/* lexOpen is called to "open the lexicon", setting up for later calls to
- * lexPush and lexPull. if the lexicon has not been opened before calls
- * to these functions, their behavior can be unpredictable, most likely crashing
- */
-void lexOpen();
-
-/* lexClose should always be called after the last lex push or lex pull call
- * if the lexicon is left open, some vector data may be lost due to 
- * un-flushed RIV cache
- */
-void lexClose();
-
 /*consolidateD2S takes a denseRIV value-set input, and returns a sparse RIV with
  * all 0s removed. it does not automatically carry metadata, which must be assigned
  * to a denseRIV after the fact.  often denseRIVs are only temporary, and don't
@@ -111,21 +99,7 @@ sparseRIV consolidateD2S(int *denseInput);  //#TODO fix int*/denseRIV confusion
  * this produces an "implicit" RIV which can be used with the mapI2D function
  * to create a denseRIV.
  */
-void makeSparseLocations(unsigned char* word,  int *seeds, size_t seedCount);
-
-/* fLexPush pushes the data contained in a denseRIV out to a lexicon file,
- * saving it for long-term aggregation.  function is called by "lexPush",
- * which is what users should actually use.  lexPush, unlike fLexPush,
- * has cache logic under the hood for speed and harddrive optimization
- */
-int fLexPush(denseRIV* RIVout);
-
-/* flexPull pulls data directly from a file and converts it (if necessary)
- * to a denseRIV.  function is called by "lexPull" which is what users 
- * should actually use.  lexPull, unlike FlexPull, has cache logic under
- * the hood for speed and harddrive optimization 
- */
-denseRIV* fLexPull(FILE* lexWord);
+void makeSparseLocations(char* word,  int *seeds, size_t seedCount);
 
 /* mapI2D maps an "implicit RIV" that is, an array of index values, 
  * arranged by chronological order of generation (as per makesparseLocations)
@@ -149,8 +123,6 @@ int cacheDump();
  */
 int* addI2D(int* destination, int* locations, size_t seedCount);
 
-/* redefines signal behavior to protect cached data against seg-faults etc*/
-void signalSecure(int signum, siginfo_t *si, void* arg);
 /* begin definitions */
 
 int* addS2D(int* destination, sparseRIV input){// #TODO fix destination parameter vs calloc of destination
@@ -244,35 +216,8 @@ sparseRIV consolidateD2S(int *denseInput){
 }
 
 
-void lexOpen(char* lexName){
-	
-	struct stat st = {0};
-	if (stat(lexName, &st) == -1) {
-		mkdir(lexName, 0777);
-	}	
-	strcpy(RIVKey.lexName, lexName);
-	/* open a slot at least large enough for ;worst case handling of
-	 * sparse to dense conversion.  may be enlarged by filetoL2 functions */
-	struct sigaction action = {0};
-	action.sa_sigaction = signalSecure;
-	action.sa_flags = SA_SIGINFO;
-	for(int i=1; i<27; i++){
-		sigaction(i,&action,NULL);
-	}
-	 
 
-	/* open a slot for a cache of dense RIVs, optimized for frequent accesses */
-	memset(RIVKey.RIVCache, 0, sizeof(denseRIV*)*CACHESIZE);
-}
-void lexClose(){
-	
-	 
-	if(cacheDump()){
-		puts("cache dump failed, some lexicon data was lost");
-	}
-}
-
-void makeSparseLocations(unsigned char* word,  int *locations, size_t count){
+void makeSparseLocations(char* word,  int *locations, size_t count){
 	locations+=count;
 	srand(wordtoSeed(word));
 	int *locations_stop = locations+NONZEROS;
@@ -286,108 +231,6 @@ void makeSparseLocations(unsigned char* word,  int *locations, size_t count){
 	return;
 }
 
-int fLexPush(denseRIV* output){	
-	char pathString[200] = {0};
-	denseRIV RIVout = *output;
-	/* word data will be placed in a (new?) file under the lexicon directory
-	 * in a file named after the word itself */
-	sprintf(pathString, "%s/%s", RIVKey.lexName, RIVout.name);
-	FILE *lexWord = fopen(pathString, "wb");
-
-	if(!lexWord){
-		printf("lexicon push has failed for word: %s\nconsider cleaning inputs", pathString);
-		return 1;
-	}
-
-	sparseRIV temp = consolidateD2S(RIVout.values);
-	if(temp.count<(RIVSIZE/2)){
-		/* smaller stored as sparse vector */
-
-		fwrite(&temp.count, 1, sizeof(size_t), lexWord);
-		fwrite(&RIVout.frequency, 1, sizeof(int), lexWord);
-		fwrite(&RIVout.contextSize, 1, sizeof(int), lexWord);
-		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
-		fwrite(temp.locations, temp.count, sizeof(int), lexWord);
-		fwrite(temp.values, temp.count, sizeof(int), lexWord);
-	}else{
-		/* saturation is too high, better to store dense */
-		/* there's gotta be a better way to do this */
-		temp.count = 0;
-		fwrite(&temp.count, 1, sizeof(size_t), lexWord);
-		fwrite(&RIVout.frequency, 1, sizeof(int), lexWord);
-		fwrite(&RIVout.contextSize, 1, sizeof(int), lexWord);
-		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
-		fwrite(RIVout.values, RIVSIZE, sizeof(int), lexWord);
-	}
-
-	fclose(lexWord);
-	free(output);
-	free(temp.locations);
-
-	return 0;
-}
-
-denseRIV* fLexPull(FILE* lexWord){
-	denseRIV *output = calloc(1,sizeof(denseRIV));
-	size_t typeCheck;
-	/* get metadata for vector */
-	fread(&typeCheck, 1, sizeof(size_t), lexWord);
-	fread(&output->frequency, 1, sizeof(int), lexWord);
-	fread(&output->contextSize, 1, sizeof(int), lexWord);
-	fread(&output->magnitude, 1, sizeof(float), lexWord);
-
-	/* first value stored is the value count if sparse, and 0 if dense */
-	if (typeCheck){
-		/* pull as sparseVector */
-		sparseRIV temp;
-		/* value was not 0, so it's the value count */
-		temp.count = typeCheck;
-
-		temp.locations = (int*)malloc(temp.count*2*sizeof(int));
-		temp.values = temp.locations+temp.count;
-		fread(temp.locations, temp.count, sizeof(int), lexWord);
-		fread(temp.values, temp.count, sizeof(int), lexWord);
-
-		addS2D(output->values, temp);
-		free(temp.locations);
-	}else{
-		/* typecheck is thrown away, just a flag in this case */
-		fread(output->values, RIVSIZE, sizeof(int), lexWord);
-	}
-
-
-	output->cached = 0;
-
-	return output;
-
-}
-
-
-
-int cacheDump(){
-
-	int flag = 0;
-
-	for(int i = 0; i < CACHESIZE; i++){
-		if(RIVKey.RIVCache[i]){
-
-			flag += fLexPush(RIVKey.RIVCache[i]);
-		}
-	}
-	return flag;
-}
-
-
-/*TODO add a simplified free function*/
-void signalSecure(int signum, siginfo_t *si, void* arg){
-  if(cacheDump()){
-	  puts("cache dump failed, some lexicon data lost");
-  }else{
-	puts("cache dumped successfully");
-  }
-  signal(signum, SIG_DFL);
-  kill(getpid(), signum);
-}
 sparseRIV* sparseAllocateFormatted(){
 	sparseRIV* output = (sparseRIV*)calloc(1, sizeof(sparseRIV));
 	

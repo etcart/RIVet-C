@@ -7,20 +7,8 @@
 #include <math.h>
 #include "core/RIVLower.h"
 #include "core/RIVaccessories.h"
+#include "core/RIVlexicon.h"
 
-
-/* both lexPush and lexPull must be called *after* the lexOpen() function
- * and after using them the lexClose() function must be called to ensure
- * data security */
- 
-/* lexPush writes a denseRIV to the lexicon for permanent storage */
-int lexPush(denseRIV* RIVout);
-/* lexPull reads a denseRIV from the lexicon, under "word"
- * if the file does not exist, it creates a 0 vector with the name of word
- * lexPull returns a denseRIV *pointer* because its data must be tracked 
- * globally for key optimizations
- */
-denseRIV* lexPull(char* word);
 
 /* fileToL2 takes an input file, reads words (delimiting on " " and "\n") 
  * and returns a sparse RIV which is the vector sum of the base RIVs of each 
@@ -56,7 +44,7 @@ double getMagnitudeDense(denseRIV *input); //TODO consolidate these into one fun
 	
 sparseRIV textToL2(char *text){
 	int wordCount = 0;
-	unsigned char word[100] = {0};
+	char word[100] = {0};
 
 	int denseTemp[RIVSIZE] = {0};
 	/* locations (implicit RIV) are temp stored in temp block, and moved 
@@ -94,7 +82,7 @@ sparseRIV textToL2(char *text){
 }
 
 sparseRIV fileToL2(FILE *data){
-	unsigned char word[100] = {0};
+	char word[100] = {0};
 
 	/* locations (implicit RIV) are temporarily stored in temp block, 
 	 * and moved to permanent home in consolidation */
@@ -134,7 +122,7 @@ sparseRIV fileToL2(FILE *data){
 sparseRIV fileToL2Clean(FILE *data){
 
 	int denseTemp[RIVSIZE] = {0};
-	unsigned char word[100] = {0};
+	char word[100] = {0};
 	int *locations = RIVKey.h_tempBlock;
 	unsigned int wordCount = 0;
 
@@ -217,86 +205,7 @@ double getMagnitudeDense(denseRIV *input){
 	}
 	return sqrt(temp);
 }
-denseRIV* lexPull(char* word){
-	#if CACHESIZE > 0
 
-	/* if there is a cache, first check if the word is cached */
-	srand(wordtoSeed((unsigned char*)word));
-	int hash = rand()%CACHESIZE;
-	if(RIVKey.RIVCache[hash]){
-		if(!strcmp(word, RIVKey.RIVCache[hash]->name)){
-
-			/* if word is cached, pull from cache and exit */
-			return RIVKey.RIVCache[hash];
-		}
-	}
-	#endif /* CACHESIZE > 0 */
-
-	/* if not, attempt to pull the word data from lexicon file */
-	denseRIV* output;
-
-	char pathString[200];
-
-	sprintf(pathString, "%s/%s", RIVKey.lexName, word);
-	FILE *lexWord = fopen(pathString, "rb");
-
-	/* if this lexicon file already exists */
-	if(lexWord){
-		/* pull data from file */
-		output = fLexPull(lexWord);
-		fclose(lexWord);
-	}else{
-		/*if file does not exist, return a 0 vector (word is new to the lexicon */ //#TODO enable NO-NEW features to protect mature lexicons? 
-		output = calloc(1, sizeof(denseRIV));
-	}
-
-	strcpy(output->name, word);
-	return output;
-}
-int lexPush(denseRIV* RIVout){
-	#if CACHESIZE == 0
-	/* if there is no cache, simply push to file */
-	return fLexPush(RIVout);
-	
-	#else /* CACHESIZE != 0 */
-
-	/* if our RIV was cached, there are two options
-	 * either the RIV is still cached, and the data has been updated 
-	 * to the cache or the RIV was pushed out from under it, 
-	 * in which case it has already been pushed! move on*/
-	if(RIVout->cached){
-		return 0;
-	}
-	
-	/* find the cache-slot where this word belongs */
-	srand(wordtoSeed((unsigned char*)RIVout->name));
-	int hash = rand()%CACHESIZE;
-	
-	/* if there is no word in this cache slot */
-	if(!RIVKey.RIVCache[hash]){
-		/* push to cache instead of file */
-		RIVKey.RIVCache[hash] = RIVout;
-		RIVKey.RIVCache[hash]->cached = 1;
-		return 0;
-	/*if the current RIV is more frequent than the RIV holding its slot */
-	}else if(RIVout->frequency > RIVKey.RIVCache[hash]->frequency ){
-		/* push the lower frequency cache entry to a file */
-		int diag = fLexPush(RIVKey.RIVCache[hash]);
-		/* replace this cache-slot with the current vector */
-
-		RIVKey.RIVCache[hash] = RIVout;
-		RIVKey.RIVCache[hash]->cached = 1;
-		
-		/* diag will be 0 if pushing went according to plan */
-		return diag;
-	}else{
-		/* push current RIV to file */
-		return fLexPush(RIVout);
-	}
-	return 1;
-	#endif /* CACHESIZE == 0 */
-
-}
 
 
 sparseRIV normalize(denseRIV input, int factor){
@@ -317,7 +226,7 @@ sparseRIV normalize(denseRIV input, int factor){
 		values[count]= round(input.values[i]*multiplier);
 		
 		/* drop any 0 values */
-		if(values[count])count++;
+		if(values[count] > 1)count++; 
 	}
 	sparseRIV output;
 	output.count = count;

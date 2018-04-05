@@ -9,9 +9,9 @@
 #include <dirent.h>
 #include <time.h>
 //RIVSIZE macro must be set to the size of the RIVs in the lexicon
-#define RIVSIZE 75000
+#define RIVSIZE 50000
 #define CACHESIZE 0
-#define EPSILON 0.96
+#define EPSILON 0.98
 #define MINPOINTS 1
 #define UNCHECKED 0
 #define NOISE -1
@@ -27,13 +27,13 @@
  */
 struct DBnode{
 	sparseRIV RIV;
-	int* indexes;
-	int indexCount;
+	struct DBnode** neighbors;
+	int neighborCount;
 	int status;
 };
 
 void intercompare(struct DBnode* DBset, int nodeCount);
-void DBdive(struct DBnode *DBset, int C, int i);
+void DBdive(struct DBnode root, struct DBnode *DBset, int C);
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
 
 int main(int argc, char *argv[]){
@@ -41,7 +41,6 @@ int main(int argc, char *argv[]){
 		printf("give me a directory");
 		return 1;
 	}
-	clock_t begintotal = clock();
 	int fileCount = 0;
 	
 	sparseRIV *fileRIVs = (sparseRIV*) malloc(1*sizeof(sparseRIV));
@@ -61,74 +60,63 @@ int main(int argc, char *argv[]){
 		fileRIVs[i].magnitude = getMagnitudeSparse(fileRIVs[i]);
 		DBset[i].RIV = fileRIVs[i];
 		/* a single malloc for later realloc'ing */
-		DBset[i].indexes = malloc(sizeof(int));
-		DBset[i].indexCount = 0;
+		DBset[i].neighbors = malloc(sizeof(struct DBnode*));
+		DBset[i].neighborCount = 0;
 		DBset[i].status = UNCHECKED;
 		
 	}
 	/* fileRIVs was only temporary */
 	free(fileRIVs);
 
-	clock_t beginnsquared = clock();
-
 	intercompare(DBset, fileCount);
 
 	
 	int C = 0;
+	
 	for(int i=0; i<fileCount; i++){
 		if(DBset[i].status) continue;
-		if(DBset[i].indexCount <MINPOINTS){
+		if(DBset[i].neighborCount <MINPOINTS){
 			DBset[i].status = NOISE;
 			continue;
 		}
 		C++;
+		printf("\ncluster %d\n", C);
 		DBset[i].status = C;
-
-		DBdive(DBset, C, i);
+		printf("root: %s, %d, %lf\n", DBset[i].RIV.name, DBset[i].RIV.frequency, DBset[i].RIV.magnitude);
+		DBdive(DBset[i], DBset, C);
 	}
-
-
-	clock_t endnsquared = clock();
-	double time = (double)(endnsquared - beginnsquared) / CLOCKS_PER_SEC;
-	printf("\nnsquared time:%lf\n\n", time);
-	clock_t endtotal = clock();
-	double time_spent = (double)(endtotal - begintotal) / CLOCKS_PER_SEC;
-	printf("total time:%lf\n\n", time_spent);
 
 
 return 0;
 }
-void DBdive(struct DBnode *DBset, int C, int i){
-	printf("\n\nroot: %s, %d, %lf\n", DBset[i].RIV.name, DBset[i].RIV.frequency, DBset[i].RIV.magnitude);
-	struct DBnode *DBnet = malloc(sizeof(struct DBnode));
-	DBnet[0] = DBset[i];
-	int nodeCount = 1;
-	for(int j = 0; j < nodeCount; j++){
-		for(int k = 0; k < DBnet[j].indexCount; k++){
-			int index = DBnet[j].indexes[k];
-			if(DBset[index].status == C){
-				
-				continue;
-			}
-			if(DBset[index].status>0){
-				printf(">>");
-			}
-			printf(">>%s, %d, %lf\n", DBset[index].RIV.name, DBset[index].RIV.frequency, DBset[index].RIV.magnitude);
-			DBset[index].status = C;
-			if(DBset[index].indexCount > MINPOINTS){
-				DBnet = realloc(DBnet, (nodeCount+1)*sizeof(struct DBnode));
-				
-				DBnet[nodeCount++] = DBset[index];
-			}
+void DBdive(struct DBnode root, struct DBnode *DBset, int C){
+
+	for(int i = 0; i < root.neighborCount; i++){
+		/* if this node is not already claimed by a cluster */
+		if(root.neighbors[i]->status > 0){
+			continue;
 		}
+		/* for easier coding, put it in a local variable */
+		struct DBnode branch = *root.neighbors[i];
+		
+		printf(">>%s, %d, %lf\n", branch.RIV.name, branch.RIV.frequency, branch.RIV.magnitude);
+		
+		/* include this in the cluster C */
+		branch.status = C;
+		
+		/* if this branch has enough neighbors to spread */
+		if(branch.neighborCount > MINPOINTS){
+			/* recursive dive into next branch */
+			DBdive(branch, DBset, C);
+		
+		}
+		
 	}
-	free(DBnet);
 }
 /* fileRIVs and fileCount are accessed as pointers, so that we can find them changed outside this function
  */
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
-
-	char pathString[2000];
+	
 	DIR *directory;
     struct dirent *files = 0;
 
@@ -175,10 +163,11 @@ void intercompare(struct DBnode* DBset, int nodeCount){
 			if(cosine>EPSILON){
 				
 				/* add the pairing to each node's list of neighbors */
-				DBset[i].indexes = realloc(DBset[i].indexes, (DBset[i].indexCount+1)*sizeof(int));
-				DBset[i].indexes[DBset[i].indexCount++] = j;
-				DBset[j].indexes = realloc(DBset[j].indexes, (DBset[j].indexCount+1)*sizeof(int));
-				DBset[j].indexes[DBset[j].indexCount++] = i;
+				DBset[i].neighbors = realloc(DBset[i].neighbors, (DBset[i].neighborCount+1)*sizeof(struct DBnode*));
+				DBset[j].neighbors = realloc(DBset[j].neighbors, (DBset[j].neighborCount+1)*sizeof(struct DBnode*));
+				
+				DBset[i].neighbors[DBset[i].neighborCount++] = &DBset[j];
+				DBset[j].neighbors[DBset[j].neighborCount++] = &DBset[i];
 			}
 		}
 	}

@@ -12,7 +12,7 @@ int isWordClean(char* word);
 int isLetter(char c);
 
 /* creates a standard seed from the characters in a word, hopefully unique */
-int wordtoSeed(unsigned char* word);
+int wordtoSeed(char* word);
 
 int isLetter(char c){
 	
@@ -33,7 +33,7 @@ int isWordClean(char* word){
 	return 1;
 		
 }
-int wordtoSeed(unsigned char* word){
+int wordtoSeed(char* word){
 	int i=0;
 	int seed = 0;
 	while(*word){
