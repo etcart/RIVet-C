@@ -11,7 +11,7 @@
 //RIVSIZE macro must be set to the size of the RIVs in the lexicon
 #define RIVSIZE 50000
 #define CACHESIZE 0
-#define EPSILON 0.98
+#define EPSILON 0.96
 #define MINPOINTS 1
 #define UNCHECKED 0
 #define NOISE -1
@@ -33,7 +33,7 @@ struct DBnode{
 };
 
 void intercompare(struct DBnode* DBset, int nodeCount);
-void DBdive(struct DBnode root, struct DBnode *DBset, int C);
+void DBdive(struct DBnode* root, struct DBnode *DBset, int C);
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
 
 int main(int argc, char *argv[]){
@@ -83,29 +83,28 @@ int main(int argc, char *argv[]){
 		printf("\ncluster %d\n", C);
 		DBset[i].status = C;
 		printf("root: %s, %d, %lf\n", DBset[i].RIV.name, DBset[i].RIV.frequency, DBset[i].RIV.magnitude);
-		DBdive(DBset[i], DBset, C);
+		DBdive(&DBset[i], DBset, C);
 	}
 
 
 return 0;
 }
-void DBdive(struct DBnode root, struct DBnode *DBset, int C){
+void DBdive(struct DBnode* root, struct DBnode *DBset, int C){
 
-	for(int i = 0; i < root.neighborCount; i++){
+	for(int i = 0; i < root->neighborCount; i++){
 		/* if this node is not already claimed by a cluster */
-		if(root.neighbors[i]->status > 0){
+		if(root->neighbors[i]->status > 0){
 			continue;
 		}
 		/* for easier coding, put it in a local variable */
-		struct DBnode branch = *root.neighbors[i];
+		struct DBnode *branch = root->neighbors[i];
 		
-		printf(">>%s, %d, %lf\n", branch.RIV.name, branch.RIV.frequency, branch.RIV.magnitude);
+		printf(">>%s, %d, %lf\n", branch->RIV.name, branch->RIV.frequency, branch->RIV.magnitude);
 		
 		/* include this in the cluster C */
-		branch.status = C;
-		
+		branch->status = C;
 		/* if this branch has enough neighbors to spread */
-		if(branch.neighborCount > MINPOINTS){
+		if(branch->neighborCount > MINPOINTS){
 			/* recursive dive into next branch */
 			DBdive(branch, DBset, C);
 		

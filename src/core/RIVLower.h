@@ -36,7 +36,7 @@
  * that do not use lexpull/push
  */
 #ifndef CACHESIZE
-#define CACHESIZE 20
+#define CACHESIZE 5000
 #endif
 
 #if CACHESIZE<0
@@ -123,6 +123,9 @@ int cacheDump();
  */
 int* addI2D(int* destination, int* locations, size_t seedCount);
 
+/*subtracts a words vector from its own context.  regularly used in lex building
+ */
+void subtractThisWord(denseRIV* vector);
 /* begin definitions */
 
 int* addS2D(int* destination, sparseRIV input){// #TODO fix destination parameter vs calloc of destination
@@ -239,7 +242,21 @@ sparseRIV* sparseAllocateFormatted(){
 	
 	return output;
 }
+void subtractThisWord(denseRIV* vector){
+	//set the rand() seed to the word
+	srand(wordtoSeed(vector->name));
+	/* the base word vector is composed of NONZERO (always an even number)
+	 * +1s and -1s at "random" points (defined by the above seed.
+	 * if we invert it to -1s and +1s, we have subtraction */
 	
+	for(int i = 0; i < NONZEROS; i+= 2){
+		vector->values[rand()%RIVSIZE] -= 1;
+		vector->values[rand()%RIVSIZE] += 1;	
+	}
+	/* record a context size 1 smaller */
+	vector->contextSize-= 1;
+	
+}
 
 #endif
 

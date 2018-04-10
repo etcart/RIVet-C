@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <error.h>
+#include <string.h>
 #include "../../RIVtools.h"
 
 //this program reads a directory full of files, and adds all context vectors (considering file as context)
@@ -12,9 +13,8 @@
 
 void fileGrind(FILE* textFile);
 void addContext(denseRIV* lexRIV, sparseRIV context);
-int checkDupe(denseRIV* RIVSet, char* word, int vectorCount);
 void directoryGrind(char *rootString);
-
+void lineGrind(char* textLine);
 
 int main(int argc, char *argv[]){
 	char pathString[1000];
@@ -41,9 +41,9 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
-//mostly a standard recursive Dirent-walk
+//mostly a standard Dirent-walk
 void directoryGrind(char *rootString){
-	/* *** begin Dirent walk *** */
+/* *** begin Dirent walk *** */
 	char pathString[2000];
 	DIR *directory;
 	struct dirent *files = 0;
@@ -55,27 +55,12 @@ void directoryGrind(char *rootString){
 
 	while((files=readdir(directory))){
 		
-		if(!files->d_name[0]) break;
-		while(*(files->d_name)=='.'){
-			files = readdir(directory);
-		}
-		
-		
-		
 		if(files->d_type == DT_DIR){
-			strcpy(pathString, rootString);
 
-			strcat(pathString, files->d_name);
-			strcat(pathString, "/");
-			directoryGrind(pathString);
 			continue;
 		}
-		
-		
-		
-		strcpy(pathString, rootString);
-		strcat(pathString, files->d_name);
-		printf("%s\n", pathString);
+			
+		sprintf(pathString, "%s/%s", rootString, files->d_name);
 /* *** end dirent walk, begin meat of function  *** */
 		
 		//check for non-txt files
@@ -96,21 +81,34 @@ void directoryGrind(char *rootString){
 	}
 }
 
-//form context vector from contents of file, then add that vector to
-//all lexicon entries of the words contained
-void fileGrind(FILE* textFile){
-	//form a context vector.  "clean" indicates that it will ignore any word which
-	//contains unwanted characters
-	sparseRIV contextVector = fileToL2Clean(textFile);
 
-	//an array of denseRIVs, large enough to hold all vectors 
-	//(we don't yet know how many vectors there will be, so we make it big enough for the  maximum)
-	denseRIV* lexiconRIV;
+void fileGrind(FILE* textFile){
+	char textLine[5000];
+	// included python script separates paragraphs into lines
 	
-	char word[100] = {0};
-	while(fscanf(textFile, "%99s", word)){
-		//we ensure that each word exists, and is free of unwanted characters
+	while(fgets(textLine, 4999, textFile)){
+	
+		if(!strlen(textLine)) continue;
 		if(feof(textFile)) break;
+	
+		//process each line as a context set
+		lineGrind(textLine);
+	}
+}
+//form context vector from contents of text, then add that vector to
+//all lexicon entries of the words contained
+void lineGrind(char* textLine){
+	//extract a context vector from this text set
+	sparseRIV contextVector = textToL2(textLine);
+	
+	denseRIV* lexiconRIV;
+	//identify stopping point in line read
+	char* textEnd = textLine + strlen(textLine)-1;
+	int displacement = 0;
+	char word[100] = {0};
+	while(textLine<textEnd){
+		sscanf(textLine, "%99s%n", word, &displacement);
+		//we ensure that each word exists, and is free of unwanted characters
 		
 		if(!(*word))continue;
 
@@ -126,14 +124,27 @@ void fileGrind(FILE* textFile){
 		//we add the context of this file to this wordVector
 		addContext(lexiconRIV, contextVector);
 		
+		//we remove the sub-vector corresponding to the word itself
+		subtractThisWord(lexiconRIV);
+		
 		//we log that this word has been encountered one more time
 		lexiconRIV->frequency += 1;
 		
 		//and finally we push it back to the lexicon for permanent storage
 		lexPush(lexiconRIV);
+		textLine += displacement+1;
 		
 	}
+	//free the heap allocated context vector data
 	free(contextVector.locations);
+	
+	
+	
+	
+	
+	
+	
+	
 }
 
 void addContext(denseRIV* lexRIV, sparseRIV context){
@@ -147,14 +158,5 @@ void addContext(denseRIV* lexRIV, sparseRIV context){
 		
 }
 
-int checkDupe(denseRIV* RIVSet, char* word, int vectorCount){
-	denseRIV* RIVStop = RIVSet+vectorCount;
-	while(RIVSet<RIVStop){
-		if(!strcmp(word, RIVSet->name)){
-			return 1;
-		}
-		RIVSet++;
-	}
-	return 0;
-}
+
 	

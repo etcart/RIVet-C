@@ -1,109 +1,163 @@
 
-import os
 import re
+import string
+import os
 import sys
 from subprocess import call
-
+import nltk
 from nltk.corpus import wordnet as wn
+import pdb
 from nltk.stem import PorterStemmer
 
 
-# cleanword will pull all to lowerCase and remove any non-letter characters
+def writeWord(cleanString, word, stem, blacklist):
+    if word == stem:
+        FILE = open("lexicon/" + word, "w")
+        FILE.write("1");
+        FILE.close();
+        return (cleanString + " " + word)
+        
+    elif stem not in blacklist:
+        if len(stem) > 2:
+            FILE = open("lexicon/" + word, "w")
+            FILE.write("2"+stem);
+            FILE.close();
+            FILE = open("lexicon/" + stem, "w")
+            FILE.write("1")
+            FILE.close();
+            return (cleanString + " " + stem)
+
+    return cleanString
+	
+
+def liFix(word):
+    if not word[len(word)-2:] == "li":
+        return word
+    
+    temp = ps.stem(word[:-2])
+    if temp:
+        return temp
+    return word
+
 def cleanWord(word):
-    word = word.lower()
+    word = word.lower();
     regex = re.compile('[^a-z]+')
     word = regex.sub('', word)
-
+    #print(word)
     return word
 
 
-# nltk morphy will attempt a preliminary noise reduction, and flag if not a word
+def fileCheck(word):
+
+    try:
+        
+        wordFile = open("lexicon/{}".format(word), "r")
+        code = int(wordFile.read(1))
+    except:
+        return 0
+
+    if code == 2:
+        word = wordFile.read()
+   
+        wordFile.close()
+        return word
+    elif code == 1:
+
+        wordFile.close()
+        return word
+    elif code == 0:
+        wordFile.close()
+        return -1
+
 def morphyTest(word):
     morphyTemp = wn.morphy(word)
 
     if not morphyTemp:
         return 0
 
-    return morphyTemp
+    return morphyTemp;
 
 
-# blacklist lists words we remove as noise
+#begin mainfunction
+
 blacklist = ["a", "an", "the", "so", "as", "how",
              "i", "me", "we", "they", "you", "it", "he", "she",
              "but", "have", "had",
              "for", "by", "in", "out", "as", "not"
-                                             "be", "were", "was", "am", "are", "is",
+             "be", "were", "was", "am", "are", "is",
              "mr", "mrs", "mr", "and"]
 word = {}
 ps = PorterStemmer()
 sourceString = sys.argv[1]
 cutDirectories = sourceString.split('/')[-1]
 pathString = cutDirectories.split('.')[0]
-pathString = "cleanbooks/" + pathString + "clean/"
+pathString = "cleanbooks/" + pathString + "clean.txt"
 print(sourceString + "\n")
 
 if not os.path.exists('cleanbooks'):
     os.makedirs('cleanbooks')
-
-# document will be split into paragraph sized documents, in the following directory
-if not os.path.exists(pathString):
-    os.makedirs(pathString)
+if not os.path.exists('lexicon'):
+    os.makedirs('lexicon')
 
 call(["python", "blacklist.py"])
-i = 0
-# to begin with, we expect a project gutenberg header, legal info that we skip
+i=0
 skip = 1
 with open(sourceString, 'U') as fileIn:
+
     text = fileIn.read()
-    # project gutenberg delimits paragraphs by double returns
-    for paragraph in text.split(2 * os.linesep):
+
+    for paragraph in text.split(2*os.linesep):
 
         if not paragraph:
             continue
-        # two different wordings for the begining of the actual content
         elif "*** START OF " in paragraph or "*END THE SMALL PRINT" in paragraph:
             skip = 0
+            fileOut = open(pathString, "w")
             continue
-        # three different wordings for the end of the actual content
-        elif "*** END OF " in paragraph or "End of Project Gutenberg's" in paragraph or "End of the Project Gutenberg" in paragraph:
+        elif "*** END OF " in paragraph:
             fileIn.close()
             sys.exit()
-        # if we have passed the header, begin processing
+        elif "End of Project Gutenberg's" in paragraph:
+            fileIn.close()
+            sys.exit()
+        elif "End of the Project Gutenberg" in paragraph:
+            fileIn.close()
+            sys.exit()
         if not skip:
             cleanString = ''
-            i += 1
-            # create a numbered text file to hold one paragraph
-            fileOut = open("{}{}.txt".format(pathString, i), "w")
-
-            for line in paragraph.split(os.linesep):  # os.linesep may need to be changed for operating system
+            
+            for line in paragraph.split(os.linesep):
 
                 for tempWord in line.split():
-                    # remove extraneous characters and lower-case
-                    word = cleanWord(tempWord)
-                    if word in blacklist:
-                        continue
+                    word=cleanWord(tempWord)
                     if not word:
                         continue
-                    # is it a word?
-                    temp = morphyTest(word)
+                    if len(word) < 3:
+						continue;
+                    if word in blacklist:
+						continue;
+
+
+                    temp = fileCheck(word)
+                    if temp == -1:
+                        continue
                     if temp:
-                        # if the word passes morphy test, stem it
-                        stem = ps.stem(temp)
-                        # if not blacklisted, add it to the accumulating paragraph with a space
-                        if stem and not stem in blacklist:
-                            cleanString = cleanString + ' ' + stem
+                        cleanString = (cleanString + temp + " " );
+                        continue
+						
+                    else:
+                        morphy = morphyTest(word)
+                        if morphy:
+                            stem = ps.stem(morphy)
+                            if stem:
+				stem = liFix(stem)
+                                cleanString = writeWord(cleanString, word, stem, blacklist)
 
-                cleanString = cleanString + os.linesep
-                # trim paragraphs too small to be meaningful
-            if len(cleanString.split(' ')) > 5:
+                cleanString = cleanString
+            if len(cleanString.split(' ')) > 4:
+                
+                fileOut.write(cleanString+os.linesep)
+           
 
-                fileOut.write(cleanString)
-                fileOut.close()
-            else:
-
-                fileOut.close()
-                os.remove("{}{}.txt".format(pathString, i))
-                i -= 1
-
-if skip == 1:
-    print(sourceString + " was badly parsed, no output")
+if skip==1:
+    print(sourceString + " was badly parsed, no output");
