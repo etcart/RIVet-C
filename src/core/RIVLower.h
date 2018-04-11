@@ -59,8 +59,8 @@ typedef struct{
 	int *locations;
 	size_t count;
 	double magnitude;
-	int contextSize;
-	int frequency;
+	unsigned int contextSize;
+	unsigned int frequency;
 }sparseRIV;
 /* the denseRIV is a RIV form optimized for overwhelmingly non-0 vectors
  * this is rarely the case, but its primary use is for performing vector
@@ -72,8 +72,8 @@ typedef struct{
 	char name[100];
 	int frequency;
 	double magnitude;
-	int contextSize;
-	int values[RIVSIZE];
+	unsigned int contextSize;
+	unsigned int values[RIVSIZE];
 }denseRIV;
 
 /*RIVKey, holds global variables used under the hood, primarily for the lexicon

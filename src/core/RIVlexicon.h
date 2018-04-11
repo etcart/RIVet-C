@@ -192,7 +192,7 @@ int fLexPush(denseRIV* output){
 
 		fwrite(&temp.count, 1, sizeof(size_t), lexWord);
 		fwrite(&RIVout.frequency, 1, sizeof(int), lexWord);
-		fwrite(&RIVout.contextSize, 1, sizeof(int), lexWord);
+		fwrite(&RIVout.contextSize, 1, sizeof(unsigned int), lexWord);
 		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
 		fwrite(temp.locations, temp.count, sizeof(int), lexWord);
 		fwrite(temp.values, temp.count, sizeof(int), lexWord);
@@ -202,7 +202,7 @@ int fLexPush(denseRIV* output){
 		temp.count = 0;
 		fwrite(&temp.count, 1, sizeof(size_t), lexWord);
 		fwrite(&RIVout.frequency, 1, sizeof(int), lexWord);
-		fwrite(&RIVout.contextSize, 1, sizeof(int), lexWord);
+		fwrite(&RIVout.contextSize, 1, sizeof(unsigned int), lexWord);
 		fwrite(&RIVout.magnitude, 1, sizeof(float), lexWord);
 		fwrite(RIVout.values, RIVSIZE, sizeof(int), lexWord);
 	}
@@ -220,7 +220,7 @@ denseRIV* fLexPull(FILE* lexWord){
 	/* get metadata for vector */
 	fread(&typeCheck, 1, sizeof(size_t), lexWord);
 	fread(&output->frequency, 1, sizeof(int), lexWord);
-	fread(&output->contextSize, 1, sizeof(int), lexWord);
+	fread(&output->contextSize, 1, sizeof(unsigned int), lexWord);
 	fread(&output->magnitude, 1, sizeof(float), lexWord);
 
 	/* first value stored is the value count if sparse, and 0 if dense */

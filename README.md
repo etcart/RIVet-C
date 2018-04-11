@@ -1,5 +1,5 @@
 # RIVet
-
+(/ˈɹɪvət/)
 
 RIVet is a low level natural language processing toolkit for the Random 
 Index Vector system.  This system is for document labelling and other 
