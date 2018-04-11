@@ -51,9 +51,11 @@ sparseRIV textToL2(char *text){
 	 * to permanent home in consolidation */
 	int *locations = RIVKey.h_tempBlock;
 	int locationCount = 0;
-	int displacement;
+	int displacement = 0;;
+	char* textEnd = text+strlen(text)-1;
 
-	while(sscanf(text, "%99s%n", word, &displacement)){
+	while(text<textEnd){
+		sscanf(text, "%99s%n", word, &displacement);
 		text += displacement+1;
 		if(!displacement){
 			break;

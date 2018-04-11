@@ -70,10 +70,10 @@ typedef struct{
 typedef struct{
 	int cached;
 	char name[100];
-	int frequency;
+	unsigned int frequency;
 	double magnitude;
 	unsigned int contextSize;
-	unsigned int values[RIVSIZE];
+	int values[RIVSIZE];
 }denseRIV;
 
 /*RIVKey, holds global variables used under the hood, primarily for the lexicon

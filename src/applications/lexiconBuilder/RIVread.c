@@ -6,6 +6,8 @@
 #include <dirent.h>
 #include <error.h>
 #include <string.h>
+#define RIVSIZE 150000
+#define CACHESIZE 8000
 #include "../../RIVtools.h"
 
 //this program reads a directory full of files, and adds all context vectors (considering file as context)
@@ -79,6 +81,7 @@ void directoryGrind(char *rootString){
 			fclose(input);
 		}
 	}
+	closedir(directory);
 }
 
 
@@ -106,16 +109,16 @@ void lineGrind(char* textLine){
 	char* textEnd = textLine + strlen(textLine)-1;
 	int displacement = 0;
 	char word[100] = {0};
+	
 	while(textLine<textEnd){
 		sscanf(textLine, "%99s%n", word, &displacement);
-		//we ensure that each word exists, and is free of unwanted characters
 		
+		//we ensure that each word exists, and is free of unwanted characters
 		if(!(*word))continue;
 
 		if(!isWordClean((char*)word)){
 			continue;
 		}
-		
 		
 		//we pull the vector corresponding to each word from the lexicon
 		//if it's a new word, lexPull returns a 0 vector
