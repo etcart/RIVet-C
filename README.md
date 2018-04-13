@@ -88,7 +88,7 @@ python script for this, under applications/lexiconBuilder
 
 
 In this code we compare two words in the lexicon, to see how the system understands them
-(this requires that we have already built a lexicon):
+(this code uses the included lexicon under src/lexica)
 
 ```C
 #include "RIVtools.h"
