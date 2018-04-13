@@ -94,7 +94,7 @@ In this code we compare two words in the lexicon, to see how the system understa
 #include "RIVtools.h"
 int main(){
 	//we open the lexicon
-	lexOpen("src/lexicon");
+	lexOpen("src/lexica/lexicon");
 	
 	//we pull the two words we want to compare from the lexicon
 	denseRIV* firstWordDense = lexPull("denmark");
