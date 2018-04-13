@@ -17,7 +17,7 @@ So we have, in C, the extreme power to match.  Don't worry though, this
 library strives to remove all mallocs, frees, and pointer magic from the 
 coder's space, freeing you up to ignore the technicalities and get to 
 work
-# Coming Soon!
+# ~~Coming Soon!~~ Here!
 
   - Full scale standard lexicon for general use in higher level 
 comparisons
@@ -94,7 +94,7 @@ In this code we compare two words in the lexicon, to see how the system understa
 #include "RIVtools.h"
 int main(){
 	//we open the lexicon
-	lexOpen("/home/amberhosen/code/lexica/lexicon2-25");
+	lexOpen("src/lexicon");
 	
 	//we pull the two words we want to compare from the lexicon
 	denseRIV* firstWordDense = lexPull("denmark");

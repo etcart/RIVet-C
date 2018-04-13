@@ -269,8 +269,6 @@ int cacheDump(){
 void signalSecure(int signum, siginfo_t *si, void* arg){
   if(cacheDump()){
 	  puts("cache dump failed, some lexicon data lost");
-  }else{
-	puts("cache dumped successfully");
   }
   signal(signum, SIG_DFL);
   kill(getpid(), signum);

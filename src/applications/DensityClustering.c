@@ -11,11 +11,11 @@
 //RIVSIZE macro must be set to the size of the RIVs in the lexicon
 #define RIVSIZE 50000
 #define CACHESIZE 0
-#define EPSILON 0.96
+#define EPSILON 0.98
 #define MINPOINTS 1
 #define UNCHECKED 0
 #define NOISE -1
-#define MINSIZE 2000
+#define MINSIZE 10000
 
 
 #include "../RIVtools.h"
@@ -135,7 +135,7 @@ void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
 		denseRIV* temp = lexPull(files->d_name);
 		/* if the vector has been encountered more than MINSIZE times
 		 * then it should be statistically significant, and useful */
-		if(temp->frequency >MINSIZE){
+		if(temp->contextSize >MINSIZE){
 			(*fileRIVs) = (sparseRIV*)realloc((*fileRIVs), ((*fileCount)+1)*sizeof(sparseRIV));
 			(*fileRIVs)[(*fileCount)] = normalize(*temp, 500);
 			strcpy((*fileRIVs)[(*fileCount)].name, files->d_name);
