@@ -9,13 +9,13 @@
 #include <dirent.h>
 #include <time.h>
 //RIVSIZE macro must be set to the size of the RIVs in the lexicon
-#define RIVSIZE 50000
+#define RIVSIZE 25000
 #define CACHESIZE 0
 #define EPSILON 0.98
 #define MINPOINTS 1
 #define UNCHECKED 0
 #define NOISE -1
-#define MINSIZE 10000
+#define MINSIZE -1
 
 
 #include "../RIVtools.h"

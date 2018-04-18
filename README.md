@@ -17,7 +17,7 @@ So we have, in C, the extreme power to match.  Don't worry though, this
 library strives to remove all mallocs, frees, and pointer magic from the 
 coder's space, freeing you up to ignore the technicalities and get to 
 work
-# ~~Coming Soon!~~ Here!
+# Coming Soon!
 
   - Full scale standard lexicon for general use in higher level 
 comparisons
@@ -88,7 +88,7 @@ python script for this, under applications/lexiconBuilder
 
 
 In this code we compare two words in the lexicon, to see how the system understands them
-(this code uses the included lexicon under src/lexica)
+this code requires an already formed lexicon.  a form which can be reasonably downloaded is coming soon
 
 ```C
 #include "RIVtools.h"
