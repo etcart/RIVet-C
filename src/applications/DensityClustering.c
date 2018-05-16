@@ -9,7 +9,7 @@
 #include <dirent.h>
 #include <time.h>
 //RIVSIZE macro must be set to the size of the RIVs in the lexicon
-#define RIVSIZE 25000
+#define RIVSIZE 50000
 #define CACHESIZE 0
 #define EPSILON 0.98
 #define MINPOINTS 1
@@ -34,7 +34,7 @@ struct DBnode{
 
 void intercompare(struct DBnode* DBset, int nodeCount);
 void DBdive(struct DBnode* root, struct DBnode *DBset, int C);
-void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);
+void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount, LEXICON* lexicon);
 
 int main(int argc, char *argv[]){
 	if(argc <2){
@@ -46,11 +46,12 @@ int main(int argc, char *argv[]){
 	sparseRIV *fileRIVs = (sparseRIV*) malloc(1*sizeof(sparseRIV));
 	char rootString[1000];
 	
-	lexOpen(argv[1]);
+	//we open the lexicon under "read, exclusive" flags
+	LEXICON* lexicon = lexOpen(argv[1], "rx");
 	strcpy(rootString, argv[1]);
 	strcat(rootString, "/");
 
-	directoryToL2s(rootString, &fileRIVs, &fileCount);
+	directoryToL2s(rootString, &fileRIVs, &fileCount, lexicon);
 	printf("fileCount: %d\n", fileCount);
 	/* an array of nodes, one for each vector */
 	struct DBnode DBset[fileCount];
@@ -112,9 +113,8 @@ void DBdive(struct DBnode* root, struct DBnode *DBset, int C){
 		
 	}
 }
-/* fileRIVs and fileCount are accessed as pointers, so that we can find them changed outside this function
- */
-void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
+/* this is mostly a standard dirent walk */
+void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount, LEXICON* lexicon){
 	
 	DIR *directory;
     struct dirent *files = 0;
@@ -131,8 +131,8 @@ void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount){
 			/* the lexicon should not have valid sub-directories */
 			continue;
 		}
-		
-		denseRIV* temp = lexPull(files->d_name);
+		/* end dirent walk, begin meat of the function */
+		denseRIV* temp = lexPull(lexicon, files->d_name);
 		/* if the vector has been encountered more than MINSIZE times
 		 * then it should be statistically significant, and useful */
 		if(temp->contextSize >MINSIZE){

@@ -164,7 +164,7 @@ sparseRIV fileToL2Clean(FILE *data){
 
 double cosCompare(denseRIV baseRIV, sparseRIV comparator){
 
-	long long int dot = 0;
+	int dot = 0;
 	int* locations_stop = comparator.locations+comparator.count;
 	int* locations_slider = comparator.locations;
 	int* values_slider = comparator.values;
@@ -228,7 +228,7 @@ sparseRIV normalize(denseRIV input, int factor){
 		values[count]= round(input.values[i]*multiplier);
 		
 		/* drop any 0 values */
-		if(values[count] > 1)count++; 
+		if(values[count])count++; 
 	}
 	sparseRIV output;
 	output.count = count;

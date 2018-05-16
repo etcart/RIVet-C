@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include "RIVaccessories.h"
+#include "assert.h"
 /* RIVSIZE macro defines the dimensionality off the RIVs we will use
  * 25000 is the standard, but can be redefined specifically
  */
@@ -14,8 +15,8 @@
 #define RIVSIZE 25000
 #endif
 
-#if RIVSIZE<0
-#error "RIVSIZE must be a positive number (preferably a large positive)"
+#if RIVSIZE<4
+#error "RIVSIZE must be a positive number, greater than 4 (preferably a large positive)"
 #endif
 
 /* NONZeros macro defines the number of non-zero values that will be generated
@@ -36,7 +37,7 @@
  * that do not use lexpull/push
  */
 #ifndef CACHESIZE
-#define CACHESIZE 5000
+#define CACHESIZE 10000
 #endif
 
 #if CACHESIZE<0
@@ -46,6 +47,7 @@
 /* the size of the tempBlock used in consolidation and implicit RIVs */
 #define TEMPSIZE 3*RIVSIZE
 
+
 /* the sparseRIV is a RIV form optimized for RIVs that will be mostly 0s
  * as this is often an ideal case, it is adviseable as the default 
  * unless we are doing long term RIV aggregation.
@@ -53,14 +55,15 @@
  * containing locations and values, where pairs are found in like array 
  * indices.
  */
+ 
 typedef struct{
 	char name[100];
 	int *values;
 	int *locations;
 	size_t count;
-	double magnitude;
-	unsigned int contextSize;
-	unsigned int frequency;
+	int frequency;
+	int contextSize;
+	float magnitude;
 }sparseRIV;
 /* the denseRIV is a RIV form optimized for overwhelmingly non-0 vectors
  * this is rarely the case, but its primary use is for performing vector
@@ -68,11 +71,11 @@ typedef struct{
  * performed between sparse and dense (hetero-arithmetic)
  */
 typedef struct{
-	int cached;
 	char name[100];
-	unsigned int frequency;
-	double magnitude;
-	unsigned int contextSize;
+	void* cached;
+	int frequency;
+	int contextSize;
+	float magnitude;
 	int values[RIVSIZE];
 }denseRIV;
 
@@ -84,7 +87,8 @@ struct RIVData{
 	int h_tempBlock[TEMPSIZE];
 	int tempSize;
 	char lexName[255];
-	denseRIV* RIVCache[CACHESIZE];
+	denseRIV** RIVCache;
+	char flags;
 }static RIVKey;
 
 /*consolidateD2S takes a denseRIV value-set input, and returns a sparse RIV with
@@ -99,13 +103,13 @@ sparseRIV consolidateD2S(int *denseInput);  //#TODO fix int*/denseRIV confusion
  * this produces an "implicit" RIV which can be used with the mapI2D function
  * to create a denseRIV.
  */
-void makeSparseLocations(char* word,  int *seeds, size_t seedCount);
+void makeSparseLocations(char* word,  int *seeds, int seedCount);
 
 /* mapI2D maps an "implicit RIV" that is, an array of index values, 
  * arranged by chronological order of generation (as per makesparseLocations)
  * it assigns, in the process of mapping, values according to ordering
  */
-int* mapI2D(int *locations, size_t seedCount);
+int* mapI2D(int *locations, int seedCount);
 
 /* highly optimized method for adding vectors.  there is no method 
  * included for adding D2D or S2S, as this system is faster-enough
@@ -121,7 +125,7 @@ int cacheDump();
 /* adds all elements of an implicit RIV (a sparseRIV represented without values)
  * to a denseRIV.  used by the file2L2 functions in aggregating a document vector
  */
-int* addI2D(int* destination, int* locations, size_t seedCount);
+int* addI2D(int* destination, int* locations, int seedCount);
 
 /*subtracts a words vector from its own context.  regularly used in lex building
  */
@@ -136,6 +140,7 @@ int* addS2D(int* destination, sparseRIV input){// #TODO fix destination paramete
 	
 	/* apply values at an index based on locations */
 	while(locations_slider<locations_stop){
+		
 		destination[*locations_slider] += *values_slider;
 		locations_slider++;
 		values_slider++;
@@ -144,7 +149,7 @@ int* addS2D(int* destination, sparseRIV input){// #TODO fix destination paramete
 	return destination;
 }
 
-int* mapI2D(int *locations, size_t valueCount){// #TODO fix destination parameter vs calloc of destination
+int* mapI2D(int *locations, int valueCount){// #TODO fix destination parameter vs calloc of destination
 	int *destination = (int*)calloc(RIVSIZE,sizeof(int));
 	int *locations_slider = locations;
 	int *locations_stop = locations_slider+valueCount;
@@ -160,7 +165,7 @@ int* mapI2D(int *locations, size_t valueCount){// #TODO fix destination paramete
 
 	return destination;
 }
-int* addI2D(int* destination, int *locations, size_t valueCount){// #TODO fix destination parameter vs calloc of destination
+int* addI2D(int* destination, int *locations, int valueCount){// #TODO fix destination parameter vs calloc of destination
 	int *locations_slider = locations;
 	int *locations_stop = locations_slider+valueCount;
 
@@ -203,6 +208,7 @@ sparseRIV consolidateD2S(int *denseInput){
 		}
 	}
 	/* a slot is opened for the locations/values pair */
+	
 	output.locations = (int*) malloc(output.count*2*sizeof(int));
 	if(!output.locations){
 		printf("memory allocation failed"); //*TODO enable fail point knowledge and security
@@ -220,7 +226,7 @@ sparseRIV consolidateD2S(int *denseInput){
 
 
 
-void makeSparseLocations(char* word,  int *locations, size_t count){
+void makeSparseLocations(char* word,  int *locations, int count){
 	locations+=count;
 	srand(wordtoSeed(word));
 	int *locations_stop = locations+NONZEROS;

@@ -6,7 +6,9 @@
 #include "../RIVtools.h"
 
 /* this program identifies all near-duplicates among the documents in the 
- * chosen root directory, using RIV comparison */
+ * chosen root directory, using RIV comparison although this is meant for
+ * demonstration purposes, it can easily be repurposed to remove 
+ * near-duplicates that it finds */
 
 // fills the fileRIVs array with a vector for each file in the root directory
 void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount);

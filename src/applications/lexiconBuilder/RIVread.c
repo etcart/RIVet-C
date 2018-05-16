@@ -6,8 +6,7 @@
 #include <dirent.h>
 #include <error.h>
 #include <string.h>
-#define RIVSIZE 150000
-#define CACHESIZE 8000
+
 #include "../../RIVtools.h"
 
 //this program reads a directory full of files, and adds all context vectors (considering file as context)
@@ -17,19 +16,20 @@ void fileGrind(FILE* textFile);
 void addContext(denseRIV* lexRIV, sparseRIV context);
 void directoryGrind(char *rootString);
 void lineGrind(char* textLine);
+LEXICON* lp;
 
 int main(int argc, char *argv[]){
-	char pathString[1000];
 
+	char pathString[1000];
+	lp = lexOpen("sandboxLexicon", "rw");
 	//we open the lexicon, if it does not yet exist, it will be created
-	lexOpen("lexicon");
+	
 	
 	//we format the root directory, preparing to scan its contents
 	
 	strcpy(pathString, argv[1]);
 	strcat(pathString, "/");
 	//ensure that the targeted root directory exists
-	
 	struct stat st;
 	if(stat(pathString, &st) == -1) {
 		printf("directory doesn't seem to exist");
@@ -39,7 +39,7 @@ int main(int argc, char *argv[]){
 	directoryGrind(pathString);
 
 	//we close the lexicon again, ensuring all data is secured
-	lexClose();
+	lexClose(lp);
 	return 0;
 }
 
@@ -71,11 +71,14 @@ void directoryGrind(char *rootString){
 			printf("skipped: %s\n", files->d_name); 
 			continue;
 		}
-		
+		//puts(files->d_name);
 		//open a file within root directory
 		FILE *input = fopen(pathString, "r");
 		if(input){
+			
 			//process this file and add it's data to lexicon
+			
+
 			fileGrind(input);
 			
 			fclose(input);
@@ -86,11 +89,10 @@ void directoryGrind(char *rootString){
 
 
 void fileGrind(FILE* textFile){
-	char textLine[5000];
+	char textLine[10000];
 	// included python script separates paragraphs into lines
-	
-	while(fgets(textLine, 4999, textFile)){
-	
+	while(fgets(textLine, 9999, textFile)){
+		
 		if(!strlen(textLine)) continue;
 		if(feof(textFile)) break;
 	
@@ -103,27 +105,34 @@ void fileGrind(FILE* textFile){
 void lineGrind(char* textLine){
 	//extract a context vector from this text set
 	sparseRIV contextVector = textToL2(textLine);
-	
+	if(contextVector.contextSize <= 1){
+		free(contextVector.locations);
+		return;
+	}
+		
 	denseRIV* lexiconRIV;
 	//identify stopping point in line read
 	char* textEnd = textLine + strlen(textLine)-1;
 	int displacement = 0;
 	char word[100] = {0};
-	
 	while(textLine<textEnd){
 		sscanf(textLine, "%99s%n", word, &displacement);
-		
 		//we ensure that each word exists, and is free of unwanted characters
+		
+		textLine += displacement+1;
 		if(!(*word))continue;
 
 		if(!isWordClean((char*)word)){
 			continue;
 		}
 		
+		
 		//we pull the vector corresponding to each word from the lexicon
 		//if it's a new word, lexPull returns a 0 vector
-		lexiconRIV= lexPull(word);
-
+		lexiconRIV= lexPull(lp, word);
+		if(!lexiconRIV){
+			continue;
+		}
 		//we add the context of this file to this wordVector
 		addContext(lexiconRIV, contextVector);
 		
@@ -134,26 +143,19 @@ void lineGrind(char* textLine){
 		lexiconRIV->frequency += 1;
 		
 		//and finally we push it back to the lexicon for permanent storage
-		lexPush(lexiconRIV);
-		textLine += displacement+1;
+		lexPush(lp, lexiconRIV);
+		
 		
 	}
 	//free the heap allocated context vector data
 	free(contextVector.locations);
-	
-	
-	
-	
-	
-	
-	
-	
 }
 
 void addContext(denseRIV* lexRIV, sparseRIV context){
 		
 		//add context to the lexRIV, (using sparse-dense vector comparison)
-		addS2D(lexRIV->values, context);
+		sparseRIV thing = context;
+		addS2D(lexRIV->values, thing);
 		
 		//log the "size" of the vector which was added
 		//this is not directly necessary, but is useful metadata for some analises
