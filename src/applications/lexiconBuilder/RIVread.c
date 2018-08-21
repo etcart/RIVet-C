@@ -6,29 +6,33 @@
 #include <dirent.h>
 #include <error.h>
 #include <string.h>
-
+#define CACHESIZE 50000
 #include "../../RIVtools.h"
 
-//this program reads a directory full of files, and adds all context vectors (considering file as context)
+//this program reads a directory full of files, and adds all context vectors (considering line as context)
 //to all words found in these files. this is used to create a lexicon, or add to an existing one
-
+void subtractThisWordLexy(denseRIV* lexiconRIV);
 void fileGrind(FILE* textFile);
 void addContext(denseRIV* lexRIV, sparseRIV context);
 void directoryGrind(char *rootString);
 void lineGrind(char* textLine);
+
 LEXICON* lp;
-
+struct treenode* stemRoot;
+int COUNTY = 0;
 int main(int argc, char *argv[]){
-
+	
 	char pathString[1000];
-	lp = lexOpen("sandboxLexicon", "rw");
 	//we open the lexicon, if it does not yet exist, it will be created
-	
-	
+	lp = lexOpen("sandboxLexicon", "rw");
+	stemRoot = stemTreeSetup();
 	//we format the root directory, preparing to scan its contents
+	if(argc < 2){
+		printf("no directory given for reading");
+		return 1;
+	}
+	sprintf(pathString, "%s/", argv[1]);
 	
-	strcpy(pathString, argv[1]);
-	strcat(pathString, "/");
 	//ensure that the targeted root directory exists
 	struct stat st;
 	if(stat(pathString, &st) == -1) {
@@ -65,20 +69,11 @@ void directoryGrind(char *rootString){
 		sprintf(pathString, "%s/%s", rootString, files->d_name);
 /* *** end dirent walk, begin meat of function  *** */
 		
-		//check for non-txt files
-		char *fileEnding = pathString+strlen(pathString)-4;
-		if(strcmp(fileEnding, ".txt")){
-			printf("skipped: %s\n", files->d_name); 
-			continue;
-		}
-		//puts(files->d_name);
-		//open a file within root directory
 		FILE *input = fopen(pathString, "r");
 		if(input){
-			
+					
 			//process this file and add it's data to lexicon
 			
-
 			fileGrind(input);
 			
 			fclose(input);
@@ -87,22 +82,28 @@ void directoryGrind(char *rootString){
 	closedir(directory);
 }
 
-
 void fileGrind(FILE* textFile){
-	char textLine[10000];
+	
+	
+	char textLine[100000];
 	// included python script separates paragraphs into lines
-	while(fgets(textLine, 9999, textFile)){
+	while(fgets(textLine, 99999, textFile)){
 		
 		if(!strlen(textLine)) continue;
 		if(feof(textFile)) break;
-	
-		//process each line as a context set
-		lineGrind(textLine);
+		/* the line is purged of non-letters and all words are stemmed */
+		if(cleanLine(textLine, stemRoot)){
+			
+			//process each line as a context set
+			
+			lineGrind(textLine);
+		}
 	}
 }
 //form context vector from contents of text, then add that vector to
 //all lexicon entries of the words contained
 void lineGrind(char* textLine){
+	
 	//extract a context vector from this text set
 	sparseRIV contextVector = textToL2(textLine);
 	if(contextVector.contextSize <= 1){
@@ -122,11 +123,6 @@ void lineGrind(char* textLine){
 		textLine += displacement+1;
 		if(!(*word))continue;
 
-		if(!isWordClean((char*)word)){
-			continue;
-		}
-		
-		
 		//we pull the vector corresponding to each word from the lexicon
 		//if it's a new word, lexPull returns a 0 vector
 		lexiconRIV= lexPull(lp, word);
@@ -138,7 +134,6 @@ void lineGrind(char* textLine){
 		
 		//we remove the sub-vector corresponding to the word itself
 		subtractThisWord(lexiconRIV);
-		
 		//we log that this word has been encountered one more time
 		lexiconRIV->frequency += 1;
 		
@@ -162,6 +157,3 @@ void addContext(denseRIV* lexRIV, sparseRIV context){
 		lexRIV->contextSize += context.contextSize;
 		
 }
-
-
-	

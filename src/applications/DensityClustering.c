@@ -156,7 +156,7 @@ void intercompare(struct DBnode* DBset, int nodeCount){
 		/* for each previous vector */
 		for(int j=i+1; j<nodeCount; j++){
 				/* get cosine distance to that vector */
-				cosine = cosCompare(baseDense, DBset[j].RIV);
+				cosine = cosCompare(&baseDense, &DBset[j].RIV);
 
 			/* if this pair is close enough */
 			if(cosine>EPSILON){

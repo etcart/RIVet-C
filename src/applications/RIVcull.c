@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <time.h>
-#define THRESHOLD 0.70
+#define THRESHOLD 0.7
 #include "../RIVtools.h"
 
 /* this program identifies all near-duplicates among the documents in the 
@@ -62,7 +62,7 @@ int main(int argc, char *argv[]){
 			&& fileRIVs[j].magnitude > minmag){
 				
 				//identify the similarity of these two vectors
-				cosine = cosCompare(baseDense, fileRIVs[j]);
+				cosine = cosCompare(&baseDense, &fileRIVs[j]);
 								
 		
 				//if the two are similar enough to be flagged

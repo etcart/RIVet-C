@@ -5,6 +5,13 @@
 #include "RIVaccessories.h"
 #include "assert.h"
 
+/* error messages, used below */
+const char flexPullError[] = "vector read failure\n";
+const char flexPushError[] = "lexicon push has failed for word: %s\n";
+const char sigSecError[] = "cache dump failed, some lexicon data lost\n";
+const char lexCloseError[] = "cache dump failed, some lexicon data was lost\n";
+
+
 /* these flags will be used by the lexicon to know its permissions and states */
 #ifndef READFLAG
 #define READFLAG 0x01
@@ -59,36 +66,42 @@ struct cacheList{
 
 /* IOstagingSlot is used by fLexPush to preformat data to be written in a single
  * fwrite() call.  it has room for RIVSIZE integers behind it and 2*RIVSIZE
- * integers ahead of it, which the function saturationForStaging() will need */
-int* IOstagingSlot = RIVKey.h_tempBlock+RIVSIZE;
+ * integers ahead of it, which the function saturationForStaging() will need 
+ * the tempBlock is created in RIVLower.h*/
+int* IOstagingSlot = h_tempBlock+RIVSIZE;
 
 /* lexOpen is called to "open the lexicon", setting up for later calls to
  * lexPush and lexPull. if the lexicon has not been opened before calls
  * to these functions, their behavior can be unpredictable, most likely crashing
  * lexOpen accepts flags: r, w, x.
  * r: for reading, currently meaningless, it wont stop you reading if you don't have this
- * w: for writing. if a readonly lexicon is "written to" no data will be saved in hardcopy
+ * w: for writing. if a read-only lexicon is "written to" no data will be saved in hardcopy
  * although it will be cached if possible, so that later pulls will be optimized
  * x: exclusive. will not accept new words, lexPull returns a NULL pointer
  * and lexPush simply frees any word which is not already in the lexicon
+ * if a lexicon is not exclusive, it will return a 0 vector when a new word 
+ * is pulled
  */
 LEXICON* lexOpen(const char* lexName, const char* flags);
 
 /* lexClose should always be called after the last lex push or lex pull call
  * if the lexicon is left open, some vector data may be lost due to 
- * un-flushed RIV cache.  also frees up data, memory leaks if lexicon is not closed
+ * un-flushed RIV cache.  also frees up data: an unclosed lex is a memory leak
  */
 void lexClose(LEXICON*);
 
 /* both lexPush and lexPull must be called *after* the lexOpen() function
  * and after using them the lexClose() function must be called to ensure
- * data security (only after the final push or pull, not regularly during operation */
+ * data security (only after the final push or pull, not regularly during operation 
+ */
  
-/* lexPush writes a denseRIV to the lexicon for permanent storage */
+/* lexPush writes a denseRIV to the lexicon for permanent storage 
+ * see lexOpen for details on writing to a readonly lexicon 
+ */
 int lexPush(LEXICON* lexicon, denseRIV* RIVout);
 
 /* lexPull reads a denseRIV from the lexicon, under "word"
- * if the file does not exist, it creates a 0 vector with the name of word
+ * see lexOpen for details on pulling words unknown to the lexicon
  * lexPull returns a denseRIV *pointer* because its data must be tracked 
  * globally for key optimizations
  */
@@ -121,15 +134,29 @@ int fLexPush(LEXICON* lexicon, denseRIV* RIVout);
  */
 denseRIV* fLexPull(FILE* lexWord);
 
-/* redefines signal behavior to protect cached data against seg-faults etc*/
+/* the following three functions are meant for internal use, and may not
+ * have the desired behavior if used outside predefined contexts */
+
+/* redefines signal behavior to protect cached data against seg-faults etc
+ */
 void signalSecure(int signum, siginfo_t *si, void* arg);
+
+/* pushes cache to hard-copy. used internally by lexClose and signalSecure
+ * TODO?  secure for user use.  poorly optimized and unlikely to be necessary 
+ */
 int cacheDump(denseRIV* *toDump);
 
 /* used exclusively by flexpush to determine write-style (sparse or dense)
  * and also formats the "IOstagingSlot" for fwrite as a single block if sparse
  */
 int saturationForStaging(denseRIV* output);
+
+
+
 /* begin definitions */
+
+
+
 LEXICON* lexOpen(const char* lexName, const char* flags){
 	LEXICON* output = calloc(1, sizeof(LEXICON));
 	/* identify the presence of read, write, and exclusive flags */
@@ -146,12 +173,15 @@ LEXICON* lexOpen(const char* lexName, const char* flags){
 		}
 		/* flag for writing*/
 		output->flags |= WRITEFLAG;
-	}else if(r){
+	}
+	if(r){
 		/* if set to read and not write, return null if lexicon does not exist */
-		if (stat(lexName, &st) == -1) {
-			free(output);
-			return NULL;
-		}	
+		if(!w){
+			if (stat(lexName, &st) == -1) {
+				free(output);
+				return NULL;
+			}	
+		}
 		/* flag for reading */
 		output->flags |= READFLAG;
 	}
@@ -174,20 +204,23 @@ LEXICON* lexOpen(const char* lexName, const char* flags){
 	output->cache_slider = output->cache+CACHESIZE;
 	#endif /* SORTCACHE */
 	
-	/* flag cached ?? */ 
+	/* flag cached */ 
 	output->flags |= CACHEFLAG;
 	if(w){
 		/* setup cache-list element for break dumping */
 		struct cacheList* newCache = calloc(1, sizeof(struct cacheList));
 		newCache->cache = output->cache;
-		
-		newCache->next = rootCache;
-		if(rootCache){
-			rootCache->prev = newCache;
+		if(!rootCache){
+			rootCache = calloc(1, sizeof(struct cacheList));
 		}
+		newCache->next = rootCache;
+		
+		rootCache->prev = newCache;
 		rootCache = newCache;
 		output->listPoint = newCache;
-
+		
+		/* in the event of any catchable signal (kill will be ignored by OS)
+		 * the signalSecure function backs up data to files */
 		struct sigaction action = {0};
 		action.sa_sigaction = signalSecure;
 		action.sa_flags = SA_SIGINFO;
@@ -205,9 +238,12 @@ void lexClose(LEXICON* toClose){
 	
 #if CACHESIZE>0 
 	if(toClose->flags & WRITEFLAG){
+		/* cache is dumped to hardcopy */
 		if(cacheDump(toClose->cache)){
-			puts("cache dump failed, some lexicon data was lost");
+			/* "cache dump failed, some lexicon data was lost" */
+			fprintf(stderr, lexCloseError);
 		}
+		/* cache is removed from cache-list */
 		struct cacheList* listPoint = toClose->listPoint;
 		if(listPoint->prev){
 			listPoint->prev->next = toClose->listPoint->next;
@@ -215,9 +251,25 @@ void lexClose(LEXICON* toClose){
 		if(listPoint->next){
 			listPoint->next->prev = toClose->listPoint->prev;
 		}
+		if(rootCache == listPoint){
+			rootCache = listPoint->next;
+		}
 		free(listPoint);
+		
+			
+		
+	}else{
+		/* cache is freed, but no data is written */
+		denseRIV* *cache = toClose->cache;
+		for(int i=0; i<CACHESIZE; i++){
+			if(cache[i]){
+				free(cache[i]);
+			}
+		}
 	}
+	
 #endif
+	/* lex pointer is freed */
 	free(toClose);
 }
 
@@ -238,7 +290,8 @@ denseRIV* cacheCheckOnPull(LEXICON* lexicon, char* word){
 	return NULL;
 	#endif
 	#ifdef SORTCACHE
-	/* use a treeSearch (found in RIVaccessories) to find the denseRIV* in the cache */
+	/* use a treeSearch (found in RIVaccessories) to find the denseRIV* in the cache 
+	 * if the word is not found, will return a NULL pointer*/
 	return treeSearch(lexicon->treeRoot, word);
 
 	#endif
@@ -262,8 +315,9 @@ int cacheCheckOnPush(LEXICON* lexicon, denseRIV* RIVout){
 		lexicon->cache[hash]->cached = lexicon;
 		/* return "success" */
 		return 1;
-	/*if the current RIV is more frequent than the RIV holding its slot */
+	
 	}
+	/*if the current RIV is more frequent than the RIV holding its slot */
 	if(RIVout->frequency > lexicon->cache[hash]->frequency ){
 		/* push the lower frequency cache entry to a file */
 		fLexPush(lexicon, lexicon->cache[hash]);
@@ -280,8 +334,11 @@ int cacheCheckOnPush(LEXICON* lexicon, denseRIV* RIVout){
 	
 	/* if the cache is not yet full, append this vector to the accumulating list */
 	if (lexicon->cacheSaturation < CACHESIZE){
+		/* identity that this vector belongs to this lexicon */
 		RIVout->cached = lexicon;
+		/* input in cache */
 		lexicon->cache[lexicon->cacheSaturation] = RIVout;
+		/* input in tree for searching */
 		treeInsert(lexicon->treeRoot, RIVout->name, RIVout);	
 		
 		
@@ -289,26 +346,45 @@ int cacheCheckOnPush(LEXICON* lexicon, denseRIV* RIVout){
 		/* return "success" */
 		return 1;
 	}else{ /* if cache is full */
+		/* we will attempt to find a less-frequent word to replace
+		 * we scan the cache from right to left, assuming that the most 
+		 * common words are on the left (encountered first) */
 		
+		/* cache identity */
 		RIVout->cached = lexicon;
+		
+		/* ease of code-reading */
 		denseRIV* toCheck = RIVout;
 		denseRIV* temp;
 		
+		
 		while(1){
+			/* if the cache-slider has made it to the base of the cache
+			 * recast it to the end */
 			if(lexicon->cache_slider == lexicon->cache){
 				lexicon->cache_slider += CACHESIZE;
-			}		
+			}
+			/* reel the slider in towards the base */		
 			(lexicon->cache_slider)--;
+			
+			/* if this vector is more common than the word occupying this slot */
 			if(toCheck->frequency > (*lexicon->cache_slider)->frequency){
+				/* swap the cached word for the output RIV */
 				temp = (*lexicon->cache_slider);
 				(*lexicon->cache_slider) = toCheck;
 				toCheck = temp;
+				/* from here the swapped RIV will search for the local minimum
+				 * to replace */
 			}else{
+				/* if we didn't immediately find a replacement, give up */
 				if(toCheck == RIVout){
 					return 0;
+				/* if this vector has been replaced */
 				}else{
+					/* remove the replaced vector from the tree and push it */
 					treecut(lexicon->treeRoot, toCheck->name);
 					fLexPush(lexicon, toCheck);
+					/* add the new vector to the tree */
 					treeInsert(lexicon->treeRoot, RIVout->name, RIVout);
 					return 1;
 				}
@@ -349,6 +425,7 @@ denseRIV* lexPull(LEXICON* lexicon, char* word){
 		
 		output = fLexPull(lexWord);
 		if(!output){
+			fclose(lexWord);
 			return NULL;
 		}
 		/* record the "name" of the vector, as the word */
@@ -374,14 +451,14 @@ denseRIV* lexPull(LEXICON* lexicon, char* word){
 int lexPush(LEXICON* lexicon, denseRIV* RIVout){
 	
 	#if CACHESIZE > 0
+	
 	if(lexicon->flags & CACHEFLAG){
 	/* check the cache to see if it belongs in cache */
 		if(cacheCheckOnPush(lexicon, RIVout)){
-			/* if the cache check returns 1, it has been dealth with in cache */
+			/* if the cache check returns 1, it has been dealt with in cache */
 			return 0;
 		}
 	}
-	
 	#endif
 	
 	if(lexicon->flags & WRITEFLAG){
@@ -397,7 +474,7 @@ int lexPush(LEXICON* lexicon, denseRIV* RIVout){
 
 int saturationForStaging(denseRIV* output){
 	
-	/* IOstagingSlot is a reserved block of heap memory used for this (and other)
+	/* IOstagingSlot is a reserved block of stack memory used for this (and other)
 	 * purposes. in this function, all of the metadata to be written along with a
 	 * sparse representation of the vector, will be laid into the IOstagingSlot
 	 * in the necessary format for writing and reading again */	
@@ -459,7 +536,10 @@ int fLexPush(LEXICON* lexicon, denseRIV* output){
 		
 		FILE *lexWord = fopen(pathString, "wb");
 		if(!lexWord){
-			fprintf(stderr,"lexicon push has failed for word: %s\n", output->name);
+			/* "lexicon push has failed for word: %s\n" */
+			fprintf(stderr,flexPushError, output->name);
+			
+			free(output);
 			return 1;
 		}
 		/* IOstagingSlot is formatted for immediate writing */
@@ -472,10 +552,11 @@ int fLexPush(LEXICON* lexicon, denseRIV* output){
 		output->cached = 0;
 		FILE *lexWord = fopen(pathString, "wb");
 		if(!lexWord){
-			fprintf(stderr, "lexicon push has failed for word: %s\n", output->name);
+			/* "lexicon push has failed for word: %s\n" */
+			fprintf(stderr, flexPushError, output->name);
 			return 1;
 		}
-		/* from the type flag forward, all metadata is preformatted, we simpy write */
+		/* from the cached flag forward, all metadata is preformatted, we simpy write */
 		fwrite(((int*)&output->cached), sizeof(int), RIVSIZE+5, lexWord);
 		
 		fclose(lexWord);
@@ -500,7 +581,7 @@ denseRIV* fLexPull(FILE* lexWord){
 	if (typeCheck){ /* pull as sparseVector */
 		
 		/*create a sparseVector pointer, pointing to a prealloccated slot */
-		sparseRIV* temp = (sparseRIV*)RIVKey.h_tempBlock;
+		sparseRIV* temp = (sparseRIV*)h_tempBlock;
 		/* typecheck, non-zero, is the number of values in our vector */
 		temp->count = typeCheck;
 		/* locations slot comes immediately after the magnitude */
@@ -509,17 +590,22 @@ denseRIV* fLexPull(FILE* lexWord){
 		temp->values = temp->locations+temp->count;		
 		
 		if (fread(&(temp->frequency), sizeof(int), (typeCheck* 2)+3, lexWord) != typeCheck*2 + 3){
-			printf("vector read failure");
+			/* "vector read failure" */
+			fprintf(stderr, flexPullError);
 			return NULL;
 		}
 		
 		/* add our temporary sparseVector to the empty denseVector, for output */
 		addS2D(output->values, *temp);
+		output->contextSize = temp->contextSize;
+		output->frequency = temp->frequency;
+		output->magnitude = temp ->magnitude;
 	}else{ /* typecheck is thrown away, just a flag in this case */
 	
 		/*  read into our denseVector pre-formatted to fit */
 		if(fread(&output->frequency, sizeof(int), RIVSIZE+3, lexWord) != RIVSIZE+3){
-			printf("vector read failure");
+			/* "vector read failure" */
+			fprintf(stderr, flexPullError);
 			return NULL;
 		}
 	}
@@ -529,10 +615,11 @@ denseRIV* fLexPull(FILE* lexWord){
 /* if our data is cached, it cannot be allowed to be lost in event of an issue */
 void signalSecure(int signum, siginfo_t *si, void* arg){
 	/* descend linked list */
-	while(rootCache){
+	while(rootCache->next){
 		/* dumping all caches contained */
 		if(cacheDump(rootCache->cache)){
-			fprintf(stderr, "cache dump failed, some lexicon data lost");
+			/* "cache dump failed, some lexicon data lost" */
+			fprintf(stderr, sigSecError);
 		}
 		rootCache = rootCache->next;
 		
@@ -549,18 +636,20 @@ int cacheDump(denseRIV* *toDump){
 	denseRIV* *toDump_slider = toDump;
 	denseRIV* *toDump_stop = toDump+CACHESIZE;
 	while(toDump_slider<toDump_stop){
+		
 		#ifdef HASHCACHE
 		/* if our cache is hashed, there may be null vectors to be skipped */
 		if(*toDump_slider){
-
+			
 			flag += fLexPush((LEXICON*)(*toDump_slider)->cached,*toDump_slider);
 		}
-		#else /* HASHCAVHE */
+		#else /* HASHCACHE */
 		#ifdef SORTCACHE
 		/* if our cache is sorted, a null vector represents the end of the cache */
 		if(!*toDump_slider)break;
-
+			
 		flag += fLexPush((LEXICON*)(*toDump_slider)->cached,*toDump_slider);
+		
 		#endif /* SORTCACHE */
 		#endif
 		
@@ -571,4 +660,5 @@ int cacheDump(denseRIV* *toDump){
 	
 	return flag;
 }
+
 #endif /* RIV_LEXICON_H */

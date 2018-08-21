@@ -6,151 +6,218 @@
 #include <string.h>
 #include "stemconfig/stemset.h"
 
+/* for making a word-search tree.  26 links is because it expects only 
+ * lower-case, english language characters */
 struct treenode{
 	void* data;
-	
 	struct treenode* links[26];
 	int downstream;
 	
 }*nextNode;
+
+/* used in creating  a stemTree, this passes a pointer to a stack-held stem,
+ * to be found by searching its leaf */
 void stemInsert(struct treenode* node, char* letter, void* data);
+
+/* removes the chosen word from the search tree, along with closing 
+ * pruning the tree as far back as possible without interfering with other
+ * entries
+ */
 int treecut(struct treenode* node, char* letter);
 
+
+/* general insert into word-search tree, accepts void-pointers for generic
+ * use. used internally in the lex-cache logic.
+ */
 void treeInsert(struct treenode* node, char* letter, void* data);
+
+/* used both in stem searching and also cache-searching, returns a pointer
+ * to memory or a null pointer if the entered word is linked to nothing
+ */
 void* treeSearch(struct treenode* node, char* letter);
+
+/* a wrapper for treeSearch() for easier reading in code */
+char* getStem(struct treenode* searchRoot, char* word);
+
+/* builds a tree of english language word-stems, using files and tools in 
+ * the stemconfig folder.  included python script: stemconfig.py can be run
+ * to sync the stemconfig folder with a stem-network database
+ */
 struct treenode* stemTreeSetup();
 
-/*isWordClean filters words that contain non-letter characters, and 
- * upperCase letters, allowing only the '_' symbol through
- */
-int isWordClean(char* word);
-
-/* used by wordClean */
-int isLetter(char c);
-
 /* creates a standard seed from the characters in a word, hopefully unique */
-int wordtoSeed(char* word);
+int wordToSeed(char* word);
 
-int isLetter(char c){
-	
-	if((c>96 && c<123)||(c == 32)) return 1;
-	else return 0;
-}
-int isWordClean(char* word){
-	char *letter = word;
-	char *word_stop = word+99;
-	while(letter<word_stop){
-		if(!(*letter)) break;
-		if(!(isLetter(*letter))){
-			
-			return 0;
-		}
-		letter++;
-	}
-	return 1;
-		
-}
-int wordtoSeed(char* word){
+int cleanLine(char* textLine, struct treenode* stemRoot);
+
+int wordToSeed(char* word){
 	int i=0;
 	int seed = 0;
 	while(*word){
 		/* left-shift 5 each time *should* make seeds unique to words
 		 * this means letters are taken as characters counted in base 32, which
-		 * should be large enough to hold all english characters plus a few outliers
-		 * */
-		seed += (*(word))<<(i*5);
+		 * is large enough to hold all english characters plus a few outliers
+		 * additionally, it is caps-insensitive */
+		seed += (*(word)%32)<<(i*5);
 		word++;
 		i++;
 	}
 	return seed;
 }
-struct treenode* stemTreeSetup(){
-	FILE* wordFile = fopen("stemconfig/wordset.txt", "r");
-	if(!wordFile){
-		printf("no wordnet file");
-		return 0;
-	}
+
+char* getStem(struct treenode* searchRoot, char* word){
+	return treeSearch(searchRoot , word);
+}
+
+int clean(char* word){
 	
-	struct treenode* rootNode = calloc(treesize, sizeof(struct treenode));
-	nextNode = rootNode+1;
-	char word[100];
-	char* stem = (char*)stemset;
-	int displacement;
-	while(fscanf(wordFile, "%s", word)){
-		
-		sscanf(stem, "%*s%n", &displacement);
-		stem[displacement] = '\0';
-		
-		
-		stemInsert(rootNode, word, stem);
-		if(feof(wordFile)){
-			break;
+	char* letter = word;
+	char* outLetter = word;
+	
+	/* scan through the word */
+	while(*letter){
+		/* reduce upper case to lower case */
+		if(*letter >= 'A' && *letter <= 'Z'){
+			*outLetter = *letter + 32;
+			outLetter++;
+		/* keep lower case */
+		}else if( *letter >= 'a' && *letter <= 'z'){
+			*outLetter = *letter;
+			outLetter++;
 		}
-		stem += displacement+1;
+		letter++;
+		/* null terminator at end */
+	}*outLetter = 0;
+	
+	/* if no characters made it through the filter, return 0 for "empty" */
+	if(outLetter == word) return 0;
+	else return 1;
+}
+
+int cleanLine(char* textLine, struct treenode* stemRoot){
+	
+	char word[100];
+	int displacement;
+	char temp[100000] = {0};
+	
+	char* textBase = textLine;
+	char* textEnd = textLine + strlen(textLine);
+	while(textLine<textEnd){
+		displacement = 0;
+		sscanf(textLine, "%99s%n", word, &displacement);
+		
+		textLine += displacement+1;
+		//we ensure that each word exists, and is free of unwanted characters
+		
+		if(!(*word))continue;
+		clean(word);
+		/* we seek the stem of the word (if it exists) */
+		char* stem = treeSearch(stemRoot, word);
+		if(!stem) continue;
+		
+		/*the stem is added to the end of the line, along with a space*/
+		strcat(temp, stem);
+		strcat(temp, " ");
+		
+		
+	}	
+	/* copy the cleaned text back into the old textSlot */
+	strcpy(textBase, temp);
+	
+	return strlen(textBase);
+}
+
+struct treenode* stemTreeSetup(){
+	/* a stack-temporary set of original words, to be linked to their stems */
+	#include "stemconfig/leafset.h"
+	struct treenode* rootNode = calloc(treesize, sizeof(struct treenode));
+	nextNode = rootNode;
+	char* stem = stemset;
+	char* leaf = leafset;
+	int stemDisplacement;
+	int leafDisplacement;
+	
+	
+	for(int i=0; i<wordCount; i++){
+		/* scan through both super-strings full of words */
+		sscanf(leaf, "%*s%n",&leafDisplacement);
+		sscanf(stem, "%*s%n", &stemDisplacement);
+		stem[stemDisplacement] = '\0';
+		leaf[leafDisplacement] = '\0';
+		
+		/* insert each stem under its corresponding leaf in the tree */
+		stemInsert(rootNode, leaf, stem);
+	
+		stem += stemDisplacement+1;
+		leaf += leafDisplacement+1;;
 	}
-	fclose(wordFile);
 	return rootNode;
 }
 
 	
 void* treeSearch(struct treenode* node, char* letter){
 	
-	
-	
-	if(*(letter)){
-		if(*letter > 'z' || *letter < 'a'){
-			printf("bad letter %c :: %s", *letter, letter);
-			return NULL;
-		}
-		if(!node->links[*(letter)-'a']){
-			return NULL;
-		}
-		
-		return treeSearch(node->links[*(letter)-'a'], letter+1);
-	}else{
-		
+	/* if the null-terminator has been reached, return whatever data is contained */
+	if(!*(letter)){
 		return node->data;
+	}else{
+		/* if we will try to search a non-lower-case letter, quit.  accepts
+		 * only clean words */
+		if(*letter > 'z' || *letter < 'a'){
+			
+			return NULL;
+		}
+		/* if there is nothing down that path, return NULL */
+		if(!node->links[*(letter)-'a']){
+			
+			return NULL;
+		}
+		/* search deeper down the tree */
+		return treeSearch(node->links[*(letter)-'a'], letter+1);
+		
 	}
 }
-void stemInsert(struct treenode* node, char* letter, void* data){
-	
+
+void treeInsert(struct treenode* node, char* letter, void* data){
+	/* flag that there are entries down this path, for use by treecut()*/
 	node->downstream++;
-	if(*(letter)){
-		if(!node->links[*(letter)-'a']){
-			node->links[*(letter)-'a'] = nextNode++;
-			
-		}
-		treeInsert(node->links[*(letter)-'a'], letter+1, data);
-		
-	}else{
-		
-		if(node->data) return;
+	if(!*(letter)){
+		/* if the null terminator is reached, insert data at this point */
 		node->data = data;
 		
-
 		
-	}
-}
-void treeInsert(struct treenode* node, char* letter, void* data){
-	
-	node->downstream++;
-	if(*(letter)){
+	}else{
+		/* otherwise, allocate the next link if necessary */
 		if(!node->links[*(letter)-'a']){
 			node->links[*(letter)-'a'] = calloc(1, sizeof(struct treenode));
 			
 		}
+		/* and dive further down the tree, checking the next letter */
 		treeInsert(node->links[*(letter)-'a'], letter+1, data);
-		
-	}else{
-		
-		if(node->data) return;
+	}
+}
+/* stemInsert is memory optimized because we can know exactly how big it is
+ * while compiling.  the key difference is in "nextNode++" which "allocates"
+ * the next link of the tree as the next, tightly packed treenode in order
+ * */
+void stemInsert(struct treenode* node, char* letter, void* data){
+	node->downstream++;
+	if(!*(letter)){
 		node->data = data;
+
+	}else{
+
+		if(!node->links[*(letter)-'a']){
+			node->links[*(letter)-'a'] = nextNode++;
+			
+		}
+		stemInsert(node->links[*(letter)-'a'], letter+1, data);
+				
 		
 
 		
 	}
 }
-
 int treecut(struct treenode* node, char* letter){
 	node->downstream--;
 	int flag;

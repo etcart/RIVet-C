@@ -9,12 +9,14 @@ for doc in preset:
 	set[doc["from"]] = doc["to"]
 words = [];
 stems = [];
+i=0
 for key, value in set.iteritems():
 	words.append(key);
 	stems.append(value);
+	i+=1;
 	
-wordFILE = open("wordset.txt", "w")
-wordFILE.write(' '.join(words));
+wordFILE = open("leafset.h", "w")
+wordFILE.write('char leafset[] = "' + ' '.join(words) + '";\nint wordCount = {};'.format(i));
 wordFILE.close()
 stemFILE = open("stemset.h", "w")
 finalOut = 'char stemset[] = "' + ' '.join(stems) + ' ";'+'\nint treesize = '
