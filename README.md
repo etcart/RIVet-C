@@ -42,10 +42,8 @@ that it contains, adding that to the knowledge pool of the lexicon:
 
 //this program reads a file, and adds all context vectors (considering line as context)
 //to all words found in this file. this is used to create a lexicon, or add to an existing one
-void subtractThisWordLexy(denseRIV* lexiconRIV);
 void fileGrind(FILE* textFile);
 void addContext(denseRIV* lexRIV, sparseRIV context);
-void directoryGrind(char *rootString);
 void lineGrind(char* textLine);
 
 LEXICON* lp;
