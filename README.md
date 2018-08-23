@@ -56,15 +56,19 @@ int main(int argc, char *argv[]){
 
 	//we open the lexicon, if it does not yet exist, it will be created
 	lp = lexOpen("sandboxLexicon", "rw");
+	
+	//the rootnode of a word-search tree for performing stemming
 	stemRoot = stemTreeSetup();
-	//we format the root directory, preparing to scan its contents
+	
+	//this program expects "file to be read" argument
 	if(argc < 2){
-		printf("no file given for reading");
+		puts("no file, text file is needed as second argument");
 		return 1;
 	}
 
 	FILE* textFile = fopen(argv[1], "r");
-	if(! textFile){
+	
+	if(!textFile){
 		printf("invalid file to read");
 		return 1;
 	}
@@ -75,20 +79,21 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
+//separate the file into lines, clean and stem the words in those lines
+//and pass to lineGrind() for processing
 void fileGrind(FILE* textFile){
 	
 	
 	char textLine[100000];
-	// included python script separates paragraphs into lines
+	//assuming that "contexts" are separated into lines
 	while(fgets(textLine, 99999, textFile)){
 		
 		if(!strlen(textLine)) continue;
 		if(feof(textFile)) break;
-		/* the line is purged of non-letters and all words are stemmed */
-		if(cleanLine(textLine, stemRoot)){
-			
+		
+		//the line is purged of non-letters and all words are stemmed
+		if(cleanLine(textLine, stemRoot)){	
 			//process each line as a context set
-			
 			lineGrind(textLine);
 		}
 	}
@@ -126,13 +131,13 @@ void lineGrind(char* textLine){
 		addContext(lexiconRIV, contextVector);
 		
 		//we remove the sub-vector corresponding to the word itself
-		subtractThisWord(lexiconRIV);
+		subtractBarcodeFromDense(lexiconRIV, lexiconRIV->name);
+		
 		//we log that this word has been encountered one more time
 		lexiconRIV->frequency += 1;
 		
 		//and finally we push it back to the lexicon for permanent storage
 		lexPush(lp, lexiconRIV);
-		
 		
 	}
 	//free the heap allocated context vector data
@@ -146,11 +151,10 @@ void addContext(denseRIV* lexRIV, sparseRIV context){
 		addS2D(lexRIV->values, thing);
 		
 		//log the "size" of the vector which was added
-		//this is not directly necessary, but is useful metadata for some analises
+		//this is not directly necessary, but is useful metadata for some analyses
 		lexRIV->contextSize += context.contextSize;
 		
 }
-
 ```
 
 

@@ -175,30 +175,31 @@ sparseRIV consolidateD2S(int *denseInput){
 	return output;
 }
 void addBarcode2Dense(int* denseVector, char* word){
+	/* create a rand() seed from the word to be added */
 	srand(wordToSeed(word));
+	
 	for(int i=0; i<NONZEROS; i++){
+		/* generate a +1 or a -1 */
 		int value = rand()%2;
 		if (!value){
 			value = -1;
 		}
+		/* add that at a random point in the vector */
 		denseVector[ rand()%RIVSIZE ] += value;
 		
 	}
 }
-void subtractThisWord(denseRIV* vector){
-	//set the rand() seed to the word
-	srand(wordToSeed(vector->name));
-	/* the base word vector is composed of NONZERO (always an even number)
-	 * +1s and -1s at "random" points (defined by the above seed.
-	 * if we invert it to -1s and +1s, we have subtraction */
-	
-	srand(wordToSeed(vector->name));
+void subtractBarcodeFromDense(denseRIV* vector, char* word){
+	/* create a rand() seed from the word to be added */
+	srand(wordToSeed(word));
 		
 	for(int i=0; i<NONZEROS; i++){
+		/* generate a +1 or a -1 */
 		int value = rand()%2;
 		if (!value){
 			value = -1;
 		}
+		/* add that at a random point in the vector */
 		vector->values[ rand()%RIVSIZE ] -= value;
 		
 	}
