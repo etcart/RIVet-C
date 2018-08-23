@@ -36,7 +36,10 @@ NONE!
 ### Examples
 
 In this code, we will add the context data of one text file to each word
-that it contains, adding that to the knowledge pool of the lexicon:
+that it contains, adding that to the knowledge pool of the lexicon.
+it should be noted that while this will do thorough cleaning and stemming,
+it assumes that the data it's fed is good data for forming a lexicon.
+that choice is a whole different problem to be solved
 ```C
 #include "RIVet-C/src/RIVtools.h"
 
@@ -149,23 +152,23 @@ void addContext(denseRIV* lexRIV, sparseRIV context){
 }
 
 ```
-For this style of reading, to get good, long-term accuracy, it's important
-to feed it stemmed, cleaned plaintext to reduce noise.  There is an included
-python script for this, under applications/lexiconBuilder
 
 
 In this code we compare two words in the lexicon, to see how the system understands them
-this code requires an already formed lexicon.  a form which can be reasonably downloaded is coming soon
-
+this code requires an already formed lexicon.  the included lexicon can be un-tarred for this
 ```C
 #include "RIVtools.h"
+#include "RIVet-C/src/RIVtools.h"
 int main(){
 	//we open the lexicon
-	lexOpen("src/lexica/lexicon");
-	
+	LEXICON* lex = lexOpen("RIVet-C/src/lexica/new10klexConsolidated", "rx");
+	if(!lex){
+		printf("lexicon not found");
+		return 1;
+	}
 	//we pull the two words we want to compare from the lexicon
-	denseRIV* firstWordDense = lexPull("denmark");
-	denseRIV* secondWordDense = lexPull("norway");
+	denseRIV* firstWordDense = lexPull(lex, "bassist");
+	denseRIV* secondWordDense = lexPull(lex, "keyboardist");
 	
 	//we convert one of the two to a sparse RIV
 	sparseRIV firstWordSparse = consolidateD2S(firstWordDense->values);
@@ -175,14 +178,15 @@ int main(){
 	secondWordDense->magnitude = getMagnitudeDense(secondWordDense);
 
 	//we take the cosine of the angle between these two
-	double cosine = cosCompare(*secondWordDense, firstWordSparse);
+	double cosine = cosCompare(secondWordDense, &firstWordSparse);
 	
-	//from most well-formed lexica, we find that these are 
-	//>0,99 cosine similarity
+	//in the included lexicon, we find that these two words have 
+	//>0,98 cosine similarity
 	printf("similarity of these two words is: %lf", cosine);
 	
 	//always we must close the lexicon
-	lexClose();
+	lexClose(lex);
 	return 0;
 }	
+	
 ```	

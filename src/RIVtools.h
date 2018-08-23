@@ -67,7 +67,7 @@ sparseRIV textToL2(char *text){
 	/* barcodes are accumulated in a temp block, and moved 
 	 * to permanent home in consolidation */
 	int* denseTemp = h_tempBlock;
-	memset(denseTemp, 0, RIVSIZE);
+	memset(denseTemp, 0, RIVSIZE*sizeof(int));
 
 	int displacement = 0;;
 	char* textEnd = text+strlen(text)-1;	
