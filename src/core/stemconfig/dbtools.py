@@ -3,7 +3,7 @@ from pymongo import MongoClient
 
 
 def dbSetup():
-    client = MongoClient("mongodb://etcart:Argelfraster1@ds261969.mlab.com:61969/rivwordnet")
+    client = MongoClient("mongodb://etcart:#1PasswordInTheWorld@ds261969.mlab.com:61969/rivwordnet")
     database = client.rivwordnet
     collection = database.stems
 
@@ -23,7 +23,7 @@ def dbPost(wordset, collection):
     collection.insert_many(posts)
 
 def cleanDbSetup():
-    client = MongoClient("mongodb://etcart:Argelfraster1@ds163119.mlab.com:63119/rivetcleandocs")
+    client = MongoClient("mongodb://etcart:#1PasswordInTheWorld@ds163119.mlab.com:63119/rivetcleandocs")
     database = client.rivetcleandocs
     collection = database.cleaned
     collection.create_index("file")

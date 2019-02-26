@@ -1,234 +1,243 @@
 #ifndef RIVACCESS_H_
 #define RIVACCESS_H_
 
+
+#include "stemconfig/stemset.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "stemconfig/stemset.h"
 
-/* for making a word-search tree.  26 links is because it expects only 
- * lower-case, english language characters */
-struct treenode{
+#define ALPHAFILTER 31
+
+typedef struct RIVtreenode{
 	void* data;
-	struct treenode* links[26];
+	struct RIVtreenode* links[32];
 	int downstream;
 	
-}*nextNode;
+}RIVtree;
+RIVtree *nextNode;
 
-/* used in creating  a stemTree, this passes a pointer to a stack-held stem,
- * to be found by searching its leaf */
-void stemInsert(struct treenode* node, char* letter, void* data);
+/* treeInsert, with a memory save for a tree of known size */
+void stemInsert(RIVtree* tree, char* word, void* data);
 
-/* removes the chosen word from the search tree, along with closing 
- * pruning the tree as far back as possible without interfering with other
- * entries
- */
-int treecut(struct treenode* node, char* letter);
+/* removes one element of a tree, along with any now dead trailing branches */
+int treecut(RIVtree* tree, char* word);
 
+/* inserts one entry into the word tree, creating a path to itself as necessary */
+void treeInsert(RIVtree* tree, char* word, void* data);
 
-/* general insert into word-search tree, accepts void-pointers for generic
- * use. used internally in the lex-cache logic.
- */
-void treeInsert(struct treenode* node, char* letter, void* data);
+/* retrieves a piece of data corresponding to one word */ 
+void* treeSearch(RIVtree* tree, char* word);
 
-/* used both in stem searching and also cache-searching, returns a pointer
- * to memory or a null pointer if the entered word is linked to nothing
- */
-void* treeSearch(struct treenode* node, char* letter);
+/* builds a stemtree, accepts an argument:
+NULL to indicate a complete and exhaustive tree
+non-null, should be a list of stems to include in the tree
+*/
+RIVtree* stemTreeSetup(char*);
 
-/* a wrapper for treeSearch() for easier reading in code */
-char* getStem(struct treenode* searchRoot, char* word);
+/* used temporarily by the stemtree to optimize shrunken tree creation */
+RIVtree* dummyTree(char*);
 
-/* builds a tree of english language word-stems, using files and tools in 
- * the stemconfig folder.  included python script: stemconfig.py can be run
- * to sync the stemconfig folder with a stem-network database
- */
-struct treenode* stemTreeSetup();
+void destroyTree(RIVtree* tree);
 
 /* creates a standard seed from the characters in a word, hopefully unique */
-int wordToSeed(char* word);
+int wordtoSeed(char* word);
 
-int cleanLine(char* textLine, struct treenode* stemRoot);
 
-int wordToSeed(char* word){
+int wordtoSeed(char* word){
 	int i=0;
 	int seed = 0;
 	while(*word){
 		/* left-shift 5 each time *should* make seeds unique to words
 		 * this means letters are taken as characters counted in base 32, which
-		 * is large enough to hold all english characters plus a few outliers
-		 * additionally, it is caps-insensitive */
-		seed += (*(word)%32)<<(i*5);
+		 * should be large enough to hold all english characters plus a few outliers
+		 * */
+		seed += (*(word))<<(i*5);
 		word++;
 		i++;
 	}
 	return seed;
 }
-
-char* getStem(struct treenode* searchRoot, char* word){
-	return treeSearch(searchRoot , word);
-}
-
 int clean(char* word){
 	
 	char* letter = word;
 	char* outLetter = word;
 	
-	/* scan through the word */
 	while(*letter){
-		/* reduce upper case to lower case */
 		if(*letter >= 'A' && *letter <= 'Z'){
 			*outLetter = *letter + 32;
 			outLetter++;
-		/* keep lower case */
 		}else if( *letter >= 'a' && *letter <= 'z'){
 			*outLetter = *letter;
 			outLetter++;
 		}
 		letter++;
-		/* null terminator at end */
 	}*outLetter = 0;
 	
-	/* if no characters made it through the filter, return 0 for "empty" */
 	if(outLetter == word) return 0;
 	else return 1;
 }
-
-int cleanLine(char* textLine, struct treenode* stemRoot){
-	
-	char word[100];
+int cleanLine(RIVtree* searchRoot, char* textLine){
+	int wordCount = 0;
+	char word[199];
 	int displacement;
+	char* stem;
 	char temp[100000] = {0};
-	
 	char* textBase = textLine;
 	char* textEnd = textLine + strlen(textLine);
 	while(textLine<textEnd){
-		displacement = 0;
+		
+		displacement=0;
 		sscanf(textLine, "%99s%n", word, &displacement);
 		
-		textLine += displacement+1;
-		//we ensure that each word exists, and is free of unwanted characters
+		textLine += displacement +1;
+		if(!displacement)continue;
 		
-		if(!(*word))continue;
-		clean(word);
-		/* we seek the stem of the word (if it exists) */
-		char* stem = treeSearch(stemRoot, word);
-		if(!stem) continue;
+		if(!clean(word))continue;
 		
-		/*the stem is added to the end of the line, along with a space*/
+	
+		
+		if(searchRoot){
+			stem = treeSearch(searchRoot, word);
+			
+		}else{
+			stem = word;
+		}
+		if(!stem){
+			textBase[0] = 0;
+			continue;
+		}
+		wordCount++;
 		strcat(temp, stem);
 		strcat(temp, " ");
 		
-		
-	}	
-	/* copy the cleaned text back into the old textSlot */
-	strcpy(textBase, temp);
+	}
 	
+	if(wordCount < 5){
+		return 0;
+	}
+	strcpy(textBase, temp);
 	return strlen(textBase);
 }
 
-struct treenode* stemTreeSetup(){
-	/* a stack-temporary set of original words, to be linked to their stems */
+
+RIVtree* stemTreeSetup(char* selectionFile){
 	#include "stemconfig/leafset.h"
-	struct treenode* rootNode = calloc(treesize, sizeof(struct treenode));
-	nextNode = rootNode;
+	
+	RIVtree* rootNode = calloc(treesize, sizeof(RIVtree));
+	
+	
+	RIVtree* referenceTree = dummyTree(selectionFile);
+	nextNode = rootNode+1;
+
 	char* stem = stemset;
 	char* leaf = leafset;
 	int stemDisplacement;
 	int leafDisplacement;
-	
-	
 	for(int i=0; i<wordCount; i++){
-		/* scan through both super-strings full of words */
+		
 		sscanf(leaf, "%*s%n",&leafDisplacement);
 		sscanf(stem, "%*s%n", &stemDisplacement);
 		stem[stemDisplacement] = '\0';
 		leaf[leafDisplacement] = '\0';
+		if((!selectionFile) || treeSearch(referenceTree, stem)){
+			stemInsert(rootNode, leaf, stem);
+		}
 		
-		/* insert each stem under its corresponding leaf in the tree */
-		stemInsert(rootNode, leaf, stem);
-	
 		stem += stemDisplacement+1;
 		leaf += leafDisplacement+1;;
 	}
+	destroyTree(referenceTree);
 	return rootNode;
 }
 
+RIVtree* dummyTree(char* fileName){
 	
-void* treeSearch(struct treenode* node, char* letter){
+	RIVtree* rootNode = calloc(1, sizeof(RIVtree));
+	if(!fileName) return rootNode;
 	
-	/* if the null-terminator has been reached, return whatever data is contained */
-	if(!*(letter)){
+	FILE* file = fopen(fileName, "r");
+	if(!file) return rootNode;
+	int* dummyValue = (int*)2;
+	char line[1000];
+	char word[100];
+	do{
+		if(!fgets(line, 1000, file))break;
+		sscanf(line, "%s", word);
+		treeInsert(rootNode, word, dummyValue);
+		
+		
+	}while(!feof(file));
+	fclose(file);
+	return rootNode;
+}
+	
+void* treeSearch(RIVtree* node, char* letter){
+	
+	
+	
+	if(*(letter)){
+		if(!node->links[*(letter)&ALPHAFILTER]){
+			return NULL;
+		}
+		
+		return treeSearch(node->links[*(letter)&ALPHAFILTER], letter+1);
+	}else{
+		
 		return node->data;
-	}else{
-		/* if we will try to search a non-lower-case letter, quit.  accepts
-		 * only clean words */
-		if(*letter > 'z' || *letter < 'a'){
-			
-			return NULL;
-		}
-		/* if there is nothing down that path, return NULL */
-		if(!node->links[*(letter)-'a']){
-			
-			return NULL;
-		}
-		/* search deeper down the tree */
-		return treeSearch(node->links[*(letter)-'a'], letter+1);
-		
 	}
 }
-
-void treeInsert(struct treenode* node, char* letter, void* data){
-	/* flag that there are entries down this path, for use by treecut()*/
+void stemInsert(RIVtree* node, char* letter, void* data){
+	
 	node->downstream++;
-	if(!*(letter)){
-		/* if the null terminator is reached, insert data at this point */
+	if(*(letter)){
+		if(!node->links[(*letter)&ALPHAFILTER]){
+			node->links[(*letter)&ALPHAFILTER] = nextNode++;
+			
+		}
+		treeInsert(node->links[(*letter)&ALPHAFILTER], letter+1, data);
+		
+	}else{
+		
+		if(node->data) return;
 		node->data = data;
 		
+
 		
-	}else{
-		/* otherwise, allocate the next link if necessary */
-		if(!node->links[*(letter)-'a']){
-			node->links[*(letter)-'a'] = calloc(1, sizeof(struct treenode));
-			
-		}
-		/* and dive further down the tree, checking the next letter */
-		treeInsert(node->links[*(letter)-'a'], letter+1, data);
 	}
 }
-/* stemInsert is memory optimized because we can know exactly how big it is
- * while compiling.  the key difference is in "nextNode++" which "allocates"
- * the next link of the tree as the next, tightly packed treenode in order
- * */
-void stemInsert(struct treenode* node, char* letter, void* data){
+void treeInsert(RIVtree* node, char* letter, void* data){
 	node->downstream++;
-	if(!*(letter)){
-		node->data = data;
-
-	}else{
-
-		if(!node->links[*(letter)-'a']){
-			node->links[*(letter)-'a'] = nextNode++;
+	if(*(letter)){
+		
+		if(!node->links[(*letter)&ALPHAFILTER]){
+			node->links[(*letter)&ALPHAFILTER] = calloc(1, sizeof(RIVtree));
 			
 		}
-		stemInsert(node->links[*(letter)-'a'], letter+1, data);
-				
+		treeInsert(node->links[(*letter)&ALPHAFILTER], letter+1, data);
+		
+	}else{
+		
+		if(node->data) return;
+		node->data = data;
 		
 
 		
 	}
 }
-int treecut(struct treenode* node, char* letter){
+
+int treecut(RIVtree* node, char* letter){
 	node->downstream--;
 	int flag;
 	//continue searching downstream if there is a letter
 	if(*(letter)){
-		if(node->links[*(letter)-'a']){
+		if(node->links[*(letter) | ALPHAFILTER]){
 			//propagate to next section
-			flag = treecut(node->links[*(letter)-'a'], letter+1);
+			flag = treecut(node->links[*(letter) &ALPHAFILTER], letter+1);
 			//if next section returned a "cut" flag, 0 it out
 			if(flag){
-				node->links[*(letter)-'a'] = NULL;
+				node->links[*(letter)&ALPHAFILTER] = NULL;
 			}
 		}
 	//there are no more letters, we've reached our destination
@@ -246,9 +255,9 @@ int treecut(struct treenode* node, char* letter){
 	
 	
 }
-void destroyTree(struct treenode* node){
+void destroyTree(RIVtree* node){
 	//if(node->data) free(node->data);
-	for(int i=0; i<26; i++){
+	for(int i=0; i<32; i++){
 		if(node->links[i]){
 			
 			destroyTree(node->links[i]);
