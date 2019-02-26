@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "../RIVaccessories.h"
-int configInsert(struct treenode* node, char* letter, int treeSize);
+int configInsert(RIVtree* node, char* letter, int treeSize);
 int stemTreeConfig();
 int main(){
 	int count = stemTreeConfig();
@@ -8,13 +8,13 @@ int main(){
 	
 }
 
-int configInsert(struct treenode* node, char* letter, int treeSize){
+int configInsert(RIVtree* node, char* letter, int treeSize){
 	
 	node->downstream++;
 	if(*(letter)){
 		if(!node->links[*(letter)-'a']){
 			treeSize++;
-			node->links[*(letter)-'a'] = calloc(1, sizeof(struct treenode));
+			node->links[*(letter)-'a'] = calloc(1, sizeof(RIVtree));
 			
 		}
 		return configInsert(node->links[*(letter)-'a'], letter+1, treeSize);
@@ -31,7 +31,7 @@ int stemTreeConfig(){
 		return 0;
 	}
 	
-	struct treenode* rootNode = calloc(1, sizeof(struct treenode));
+	RIVtree* rootNode = calloc(1, sizeof(RIVtree));
 	char word[100];
 	char* stem = (char*)stemset;
 	int displacement;

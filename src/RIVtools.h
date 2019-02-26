@@ -1,81 +1,66 @@
 #ifndef RIVTOOLS_H_
 #define RIVTOOLS_H_
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <pthread.h>
-#include "core/RIVLower.h"
+#include "core/RIVlower.h"
 #include "core/RIVlexicon.h"
 #include "core/RIVaccessories.h"
+#include "core/RIVmath.h"
 
-#define OVERFLOWCHECK 1L<<63
 
-/* separates a block of text into tokens, and then aggregates L1 (barcode) vectors
- * into a vector representation of the text */
-sparseRIV textToL2(char *text);
 
-/* the same as textToL2, but simplified for reading entire files
+/* fileToL2 takes an input file, reads words (delimiting on " " and "\n") 
+ * and returns a sparse RIV which is the vector sum of the base RIVs of each 
+ * word contained
  */
-sparseRIV fileToL2(FILE *data);
+sparseRIV* fileToL2(FILE *input);
+
+/* like fileToL2 but takes a block of text */
+sparseRIV* textToL2(char *text);
 
 /*cosine determines the "similarity" between two RIVs. */
+/*NOTE this legacy cosCompare is kept for simplicity, but the cos
+ * defined in RIVmath.h RIVcosCompare(vectorA, vectorB) 
+ * is RIV type agnostic for ease of use */
 double cosCompare(denseRIV *baseRIV, sparseRIV* comparator);
 
 /* used for analysis of lexicon vectors (not simply accumulation)
- * to avoid overflow of even a 64 bit integer, vectors must be normalized
- * this is not a true normal.  magnitude is assigned as "context specificity"
- * and no original magnitude needs to be calculated, which avoids the 
- * issue of integer overflow in magnitude calculation */
-sparseRIV normalize(denseRIV input, int factor);
+ * This normalization is secure against potential integer overflow
+ * issues in extreme size lexica, however, it is only an approximation
+ * of true normal.
+ */
+sparseRIV* normalize(denseRIV input, int factor);
 
-/* this takes a sparse-vector intake, and outputs a dense-vector representation
- * of the same.  it carries metadata and frees the memory used by the input
- * for a non-destructive version, use "addS2D" with a 0 dense Vector */
-denseRIV* convertS2D(sparseRIV* input);
+/* used to set a vector magnitude. this is safe to use in all but the
+ * most extremely large lexica, and get a true normal 
+ */
+sparseRIV* trueNormalize(denseRIV* input, double magnitude);
 
-/* this normalizes a vector, scaling it to have a magnitude equal to 
- * the second argument, within a rounding error from the integers used */
-sparseRIV trueNormalize(denseRIV* input, double magnitude);
-
-/* this sine distance function uses cosine under the hood, and outputs all
- * angles greater than 90 degrees as "1", rather than looping back around
- * to near zero numbers at near 180 */
+/* replaceable with the above macro, this calculates sine distance
+ * not true sine, a periodically useful metric of angle
+ */
 double sine(denseRIV* baseDense, sparseRIV* comparator);
 
-/* calculates the magnitude of a sparseVector */ //TODO further test integer overflow measures
-double getMagnitudeSparse(sparseRIV input);
-
-/* same for denseVector */
-double getMagnitudeDense(denseRIV *input); //TODO consolidate these into one function
-
-/* creates a L3 sum of L2 vectors for a line of text, for use in bag of concepts
- * classification
+/* this converts a string of raw text into a vector format, based on 
+ * the lexicon vectors of the words that form it.  this both stems and 
+ * vectorizes the text based on the lexicon and stemroot it is given
  */
-sparseRIV line2L3(LEXICON* lexicon, char* text);
+sparseRIV* line2L3(LEXICON* lexicon, char* text, RIVtree* stemRoot);
 
-/* these two function together produce a set of sine intercomparisons
- * for an array of sparseRIVs, and do so multithreaded for speed */
-void* cosineSetThread (void* args);
-double** cosIntercompare(sparseRIV* vectorSet, size_t vectorCount);
-	
-sparseRIV textToL2(char *text){
+
+sparseRIV* textToBOWL2(char *text, RIVtree* root){
 	int wordCount = 0;
 	char word[100] = {0};
-	
-	/* barcodes are accumulated in a temp block, and moved 
-	 * to permanent home in consolidation */
-	int* denseTemp = h_tempBlock;
-	memset(denseTemp, 0, RIVSIZE*sizeof(int));
 
-	int displacement = 0;;
-	char* textEnd = text+strlen(text)-1;	
+	int denseTemp[RIVSIZE] = {0};
+	/* locations (implicit RIV) are temp stored in temp block, and moved 
+	 * to permanent home in consolidation */
+	
+	int displacement = 0;
+	char* textEnd = text+strlen(text)-1;
+
 	while(text<textEnd){
 		sscanf(text, "%99s%n", word, &displacement);
 		text += displacement+1;
-		
-		/*check for unreadable text conditions and escape */
 		if(!displacement){
 			break;
 		}
@@ -83,27 +68,63 @@ sparseRIV textToL2(char *text){
 			break;
 		}
 		
-		/*add the L1 for this word to the accumulating vector */
-		addBarcode2Dense(denseTemp, word);
-		wordCount++;
+		/* add word's L1 RIV to the accumulating denseRIV */
+		denseTemp[getBOWIndex(word, root)] += 1;
 		
+		
+		wordCount++;
 	}
-	sparseRIV output = consolidateD2S(denseTemp);
+	/* map remaining locations to the denseTemp */
+	sparseRIV* output = consolidateD2S(denseTemp);
 
 	/* contextSize stores the number of words read */
-	output.contextSize = wordCount;
+	output->contextSize = wordCount;
+	return output;
+}	
+
+
+sparseRIV* textToL2(char *text){
+	int wordCount = 0;
+	char word[100] = {0};
+
+	int denseTemp[RIVSIZE] = {0};
+	/* locations (implicit RIV) are temp stored in temp block, and moved 
+	 * to permanent home in consolidation */
+	
+	int displacement = 0;
+	char* textEnd = text+strlen(text)-1;
+
+	while(text<textEnd){
+		sscanf(text, "%99s%n", word, &displacement);
+		text += displacement+1;
+		if(!displacement){
+			break;
+		}
+		if(!(*word)){
+			break;
+		}
+		
+		/* add word's L1 RIV to the accumulating denseRIV */
+		addBarcodeToDense(denseTemp, word);
+		
+		
+		wordCount++;
+	}
+	/*consolidate the dense form to a sparseRIV for output */
+	sparseRIV* output = consolidateD2S(denseTemp);
+
+	/* contextSize stores the number of words read */
+	output->contextSize = wordCount;
 	return output;
 }
 
-sparseRIV fileToL2(FILE *data){
+sparseRIV* fileToL2(FILE *data){
 	char word[100] = {0};
 
 	/* locations (implicit RIV) are temporarily stored in temp block, 
 	 * and moved to permanent home in consolidation */
-	 
-	int* denseTemp = h_tempBlock;
-	memset(denseTemp, 0, RIVSIZE);
 
+	int denseTemp[RIVSIZE] = {0};
 	int wordCount = 0;
 	while(fscanf(data, "%99s", word)){
 
@@ -114,72 +135,21 @@ sparseRIV fileToL2(FILE *data){
 			break;
 		}
 
-		/* if this word would overflow the locations block, map it to the denseVector */
-	
-		addBarcode2Dense(denseTemp, word);
+		/* add the barcode form of this word to the accumulating denseRIV */
+		addBarcodeToDense(denseTemp, word);
+		
 		
 		wordCount++;
 	}
-	/* map remaining locations to the denseTemp */
-	sparseRIV output = consolidateD2S(denseTemp);
+	
+	
+	/* consolidate the denseTemp to a sparseRIV */
+	sparseRIV* output = consolidateD2S(denseTemp);
 
 	/* contextSize records the number of words in this file */
-	output.contextSize = wordCount;
+	output->contextSize = wordCount;
 	fseek(data, 0, SEEK_SET);
 	return output;
-}
-
-
-sparseRIV line2L3(LEXICON* lexicon, char* text){
-	
-	/* will contain the vector for each component word */
-	denseRIV* wordRIV;
-	/* will accumulate the sum of all word vectors */
-	denseRIV accumulate = {0};
-	int wordCount = 0;
-	char* textEnd = text+strlen(text);
-	char word[200];
-	int displacement;
-	
-	while(text<textEnd){
-		displacement = 0;
-		sscanf(text, "%199s%n", word, &displacement);
-		text += displacement+1;
-		if(!displacement){
-			break;
-		}
-		if(!(*word)){
-			break;
-		}
-		
-		wordRIV = lexPull(lexicon, word);
-			
-		if(!wordRIV){
-			continue;
-		}
-		/* at this point the word has passed cleaning, stemming,
-		 * and is contained in the lexicon.  we add it to the total */
-		addD2D(&accumulate, wordRIV);
-
-		/* push again. this will cache the word if optimal for easy reaccess */		
-		lexPush(lexicon, wordRIV);
-		wordCount++;	
-	
-	
-	
-	}
-	/* a larger context size equate to a smaller vector on normalization */
-	accumulate.contextSize = wordCount;
-	
-	
-	if(wordCount > 1000){
-		/* normalization is used primarily to avoid integer overflow in magnitude calculation */
-	
-		return normalize(accumulate, 1);
-	}else{
-		
-		return consolidateD2S(accumulate.values);
-	}
 }
 
 double cosCompare(denseRIV* baseRIV, sparseRIV* comparator){
@@ -192,7 +162,7 @@ double cosCompare(denseRIV* baseRIV, sparseRIV* comparator){
 
 		/* we calculate the dot-product to derive the cosine 
 		 * comparing sparse to dense by index*/
-		dot += *values_slider * baseRIV->values[*locations_slider];
+		dot += (long long int)*values_slider * (long long int)baseRIV->values[*locations_slider];
 		locations_slider++;
 		values_slider++;
 
@@ -203,92 +173,8 @@ double cosCompare(denseRIV* baseRIV, sparseRIV* comparator){
 }
 
 
-double sine(denseRIV* baseDense, sparseRIV* comparator){
-	double cos = cosCompare(baseDense, comparator); // true cosine, not 1-cosine
-	if(cos < 0.0) return 1.0; //anything further than 90 degrees distance is "far"
-	if(cos >= 1.0) return 0; //floating point errors need to be rounded off to prevent "-nan"
-	return sqrt(1.0-(cos*cos));
-}
 
-double getMagnitudeSparse(sparseRIV input){
-	size_t temp = 0;
-	size_t accumulate = 0;
-	double divisor = 1;
-	int *values = input.values;
-	int *values_stop = values+input.count;
-	
-	while(values<values_stop){
-		/* we sum the squares of all elements */
-		temp += ((size_t)*values)*((size_t)*values);
-		values++;
-		if(OVERFLOWCHECK & temp){
-			/* if integer overflow is threatened, we accumulate overflow in
-			 * another variable.  this costs accuracy, but not as much as
-			 * an integer overflow. best to not let this happen at all */
-			accumulate*= divisor/(divisor+1);
-			divisor+=1;
-			accumulate = temp/divisor;
-			temp=0;	
-			
-		}
-	}
-	/* we take the root of that sum */
-	accumulate += temp/divisor;
-	return sqrt(accumulate)*sqrt(divisor);
-}
-denseRIV* convertS2D(sparseRIV* input){
-	/* create a 0'd dense vector */
-	denseRIV* output = calloc(1,sizeof(denseRIV));
-	
-	/* add the sparse-vector to the 0'd dense */
-	addS2D(output->values, *input);
-	
-	/* carry metadata */
-	strcpy(output->name, input->name);
-	output->magnitude = input->magnitude;
-	output->frequency = input->frequency;
-	output->contextSize = input->contextSize;
-	
-	/* free (and record null pointers) the sparse data */
-	free(input->locations);
-	input->count =0;
-	input->locations = NULL;
-	input->values = NULL;
-	
-	/* and return a pointer to the dense vector */
-	return output;
-	
-}	
-double getMagnitudeDense(denseRIV *input){
-	size_t temp = 0;
-	size_t accumulate = 0;
-	double divisor = 1;
-	int *values = input->values;
-	int *values_stop = values+RIVSIZE;
-	while(values<values_stop){
-		if(*values){
-			temp += ((size_t)*values)*((size_t)*values);
-		}
-		values++;
-		
-		/* integer overflow is a concern.  this checks for overflows, sacrificing small amounts of accuracy */
-		if(OVERFLOWCHECK & temp){
-			
-			/* accumulate holds an increasingly compact version of the sum of squares, as necessary */
-			accumulate*= divisor/(divisor+1);
-			divisor+=1;
-			accumulate = temp/divisor;
-			temp=0;	
-			
-		}
-	}
-	
-	/* add the temp holder, scaled in line with the accumulate value */
-	accumulate += temp/divisor;
-	/* take the square root, and scale it back to its original form */
-	return sqrt(accumulate)*sqrt(divisor);
-}
-sparseRIV trueNormalize(denseRIV* input, double magnitude){
+sparseRIV* trueNormalize(denseRIV* input, double magnitude){
 	
 	input->magnitude = getMagnitudeDense(input);
 	
@@ -296,7 +182,7 @@ sparseRIV trueNormalize(denseRIV* input, double magnitude){
 	double multiplier = magnitude/(input->magnitude);
 	
 	/* write to temp slot, data will go to a permanent home lower in function */
-	int* locations = h_tempBlock+RIVSIZE;
+	int* locations = tempBlock+RIVSIZE;
 	int* values = locations+RIVSIZE;
 	
 	int count = 0;
@@ -313,21 +199,19 @@ sparseRIV trueNormalize(denseRIV* input, double magnitude){
 		if(values[count])count++; 
 	}
 	
-	sparseRIV output;
-	output.count = count;
+	sparseRIV* output;
 	/* for memory conservation, both datasets are put inline with each other */
-	output.locations = (int*) malloc(count*2*sizeof(int));
-	output.values = output.locations+count;
+	output = sparseAllocate(count);
 	
 	/* copy the data from tempBlock into permanent home */
-	memcpy(output.locations, locations, count*sizeof(int));
-	memcpy(output.values, values, count*sizeof(int));
+	memcpy(output->locations, locations, count*sizeof(int));
+	memcpy(output->values, values, count*sizeof(int));
 	
 	/* carry metadata */
-	strcpy(output.name, input->name);
-	output.magnitude = getMagnitudeSparse(output);
-	output.contextSize = input->contextSize;
-	output.frequency = input->frequency;
+	strcpy(output->name, input->name);
+	output->magnitude = getMagnitudeSparse(output);
+	output->contextSize = input->contextSize;
+	output->frequency = input->frequency;
 	
 	return output;
 	
@@ -335,12 +219,12 @@ sparseRIV trueNormalize(denseRIV* input, double magnitude){
 }
 
 
-sparseRIV normalize(denseRIV input, int factor){
+sparseRIV* normalize(denseRIV input, int factor){
 	/* multiplier is the scaling factor we need to bring our vector to the right size */
 	float multiplier = (float)factor/(input.contextSize);
 
 	/* write to temp slot, data will go to a permanent home lower in function */
-	int* locations = h_tempBlock+RIVSIZE;
+	int* locations = tempBlock+RIVSIZE;
 	int* values = locations+RIVSIZE;
 	
 	int count = 0;
@@ -355,24 +239,156 @@ sparseRIV normalize(denseRIV input, int factor){
 		/* drop any 0 values */
 		if(values[count])count++; 
 	}
-	sparseRIV output;
-	output.count = count;
-	/* for memory conservation, both datasets are put inline with each other */
-	output.locations = (int*) malloc(count*2*sizeof(int));
-	output.values = output.locations+count;
+	sparseRIV* output = sparseAllocate(count);
 	
 	/* copy the data from tempBlock into permanent home */
-	memcpy(output.locations, locations, count*sizeof(int));
-	memcpy(output.values, values, count*sizeof(int));
+	memcpy(output->locations, locations, count*sizeof(int));
+	memcpy(output->values, values, count*sizeof(int));
 	
 	/* carry metadata */
-	strcpy(output.name, input.name);
-	output.magnitude = getMagnitudeSparse(output);
-	output.contextSize = input.contextSize;
-	output.frequency = input.frequency;
+	strcpy(output->name, input.name);
+	output->magnitude = getMagnitudeSparse(output);
+	output->contextSize = input.contextSize;
+	output->frequency = input.frequency;
 	return output;
 }
 
+double sine(denseRIV* baseDense, sparseRIV* comparator){
+	double cos = cosCompare(baseDense, comparator);
+	return COS2SIN(cos);
+}
+		
+sparseRIV* line2L3(LEXICON* lexicon, char* text, RIVtree* stemRoot){
+	
+	/* wordRIV will be used as temporary storage for lexPull output */
+	denseRIV* wordRIV;
+	
+	/* vector will be summed in preparation for consolidation and output */
+	denseRIV accumulate = {0};
+	
+	/* pointer to null terminator */
+	char* textEnd = text+strlen(text);
+	char word[100];
 
+	/* will log the number of characters read in each word */
+	int displacement;
+	while(text<textEnd){
+		sscanf(text, "%99s%n", word, &displacement);
+		
+		/* shift forward by the number of characters read (+ a space!) */
+		text += displacement+1;
+		
+		/* if the word parses down to nothing, skip */
+		if(!clean(word)) continue;
+		char* stem;
+		if(stemRoot){
+			stem = treeSearch(stemRoot, word);
+		}else{
+			stem = word;
+		}
+		/* if the word stems to nothing (has no valid stem in the lexicon)
+		 * skip */
+		if(!stem) continue;
+	
+		/* retrieve the vector form of this word from the lexicon */
+		wordRIV = lexPull(lexicon, stem);
+		
+		if(!wordRIV) continue;
+		
+		/* add this vector to the accumulating text vector */
+		addRIV(&accumulate, wordRIV) 
+		
+		/* send the vector back to the lexicon */
+		lexPush(lexicon, wordRIV);
+	
+		
+	}
+
+	/* reduce this vector to a sparse form and return */
+	return consolidateD2S(accumulate.values);
+}
+
+
+
+/*defunct, need to be shifted around to meet new standards, mid debugging
+struct threadargs{
+	int begin;
+	int end;
+	sparseRIV* set;
+};
+#define THREADCOUNT 6
+volatile int threadsInProgress = 0;
+pthread_mutex_t counterMut = PTHREAD_MUTEX_INITIALIZER;
+double** sines;
+
+double** cosIntercompare(sparseRIV* vectorSet, size_t vectorCount){
+	
+	
+	int cosSize = (vectorCount*vectorCount-vectorCount)/2;
+	
+	sines = malloc(vectorCount*sizeof(double*));
+	*sines = calloc(cosSize, sizeof(double));
+	double* sines_slider = *sines;
+	for(int i=0; i<vectorCount; i++){
+		sines[i] = sines_slider;
+		sines_slider += i;
+	}
+	
+	
+	
+	
+	pthread_t threadID[THREADCOUNT];
+	struct threadargs arguments[THREADCOUNT];
+
+	int jump = (vectorCount*vectorCount)/THREADCOUNT;
+	for(int i=0; i<THREADCOUNT; i++){
+		arguments[i].begin = sqrt(jump*i);
+		arguments[i].end = sqrt(jump*(i+1));
+		arguments[i].set = vectorSet;
+	}arguments[THREADCOUNT-1].end = vectorCount;
+	
+	for(int i=0; i<THREADCOUNT; i++){
+		
+		
+		pthread_create(&threadID[i], NULL, cosineSetThread, &arguments[i]);
+		
+
+	}
+	for(int i=0; i<THREADCOUNT; i++){
+		
+		
+		pthread_join(threadID[i], NULL);
+		
+
+	}
+	return sines;
+}
+
+void* cosineSetThread (void* args){
+	int begin = ((struct threadargs*)args)->begin;
+	int end = ((struct threadargs*)args)->end;
+	sparseRIV* set = ((struct threadargs*)args)->set;
+	denseRIV baseDense = {0};
+	
+	for(int i=begin; i<end; i++){
+		
+		memset(baseDense.values, 0, RIVSIZE*sizeof(int));
+		addRIV(baseDense, &set[i]);
+		baseDense.magnitude = set[i].magnitude;
+		
+		for(int j=0; j<i; j++){
+			
+			sines[i][j] = sine(&baseDense,&set[j]);
+			
+		}
+	}
+	
+	pthread_mutex_lock(&counterMut);
+		threadsInProgress--;
+	pthread_mutex_unlock(&counterMut);
+	return NULL;
+	
+}
+*/
 
 #endif

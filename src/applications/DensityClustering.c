@@ -26,7 +26,7 @@
  * -status will hold its cluster, either a cluster number or "unchecked"
  */
 struct DBnode{
-	sparseRIV RIV;
+	sparseRIV* RIV;
 	struct DBnode** neighbors;
 	int neighborCount;
 	int status;
@@ -34,16 +34,16 @@ struct DBnode{
 
 void intercompare(struct DBnode* DBset, int nodeCount);
 void DBdive(struct DBnode* root, struct DBnode *DBset, int C);
-void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount, LEXICON* lexicon);
+void directoryToL2s(char *rootString, sparseRIV*** fileRIVs, int *fileCount, LEXICON* lexicon);
 
 int main(int argc, char *argv[]){
 	if(argc <2){
-		printf("give me a directory");
+		printf("argument to DensityClustering should be a RIV lexicon to be clustered");
 		return 1;
 	}
 	int fileCount = 0;
 	
-	sparseRIV *fileRIVs = (sparseRIV*) malloc(1*sizeof(sparseRIV));
+	sparseRIV **fileRIVs = (sparseRIV**) malloc(1*sizeof(sparseRIV*));
 	char rootString[1000];
 	
 	//we open the lexicon under "read, exclusive" flags
@@ -58,7 +58,7 @@ int main(int argc, char *argv[]){
 	
 	/* fill the node array with vectors and initialize metadata */
 	for(int i = 0; i < fileCount; i++){
-		fileRIVs[i].magnitude = getMagnitudeSparse(fileRIVs[i]);
+		fileRIVs[i]->magnitude = RIVMagnitude(fileRIVs[i]);
 		DBset[i].RIV = fileRIVs[i];
 		/* a single malloc for later realloc'ing */
 		DBset[i].neighbors = malloc(sizeof(struct DBnode*));
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]){
 		C++;
 		printf("\ncluster %d\n", C);
 		DBset[i].status = C;
-		printf("root: %s, %d, %lf\n", DBset[i].RIV.name, DBset[i].RIV.frequency, DBset[i].RIV.magnitude);
+		printf("root: %s, %d, %lf\n", DBset[i].RIV->name, DBset[i].RIV->frequency, DBset[i].RIV->magnitude);
 		DBdive(&DBset[i], DBset, C);
 	}
 
@@ -100,7 +100,7 @@ void DBdive(struct DBnode* root, struct DBnode *DBset, int C){
 		/* for easier coding, put it in a local variable */
 		struct DBnode *branch = root->neighbors[i];
 		
-		printf(">>%s, %d, %lf\n", branch->RIV.name, branch->RIV.frequency, branch->RIV.magnitude);
+		printf(">>%s, %d, %lf\n", branch->RIV->name, branch->RIV->frequency, branch->RIV->magnitude);
 		
 		/* include this in the cluster C */
 		branch->status = C;
@@ -114,7 +114,7 @@ void DBdive(struct DBnode* root, struct DBnode *DBset, int C){
 	}
 }
 /* this is mostly a standard dirent walk */
-void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount, LEXICON* lexicon){
+void directoryToL2s(char *rootString, sparseRIV*** fileRIVs, int *fileCount, LEXICON* lexicon){
 	
 	DIR *directory;
     struct dirent *files = 0;
@@ -136,9 +136,9 @@ void directoryToL2s(char *rootString, sparseRIV** fileRIVs, int *fileCount, LEXI
 		/* if the vector has been encountered more than MINSIZE times
 		 * then it should be statistically significant, and useful */
 		if(temp->contextSize >MINSIZE){
-			(*fileRIVs) = (sparseRIV*)realloc((*fileRIVs), ((*fileCount)+1)*sizeof(sparseRIV));
+			(*fileRIVs) = (sparseRIV**)realloc((*fileRIVs), ((*fileCount)+1)*sizeof(sparseRIV*));
 			(*fileRIVs)[(*fileCount)] = normalize(*temp, 500);
-			strcpy((*fileRIVs)[(*fileCount)].name, files->d_name);
+			strcpy((*fileRIVs)[(*fileCount)]->name, files->d_name);
 			(*fileCount)++;
 		}
 		free(temp);
@@ -152,11 +152,11 @@ void intercompare(struct DBnode* DBset, int nodeCount){
 		/* map the RIV in question to a dense for comparison */
 		memset(baseDense.values, 0, RIVSIZE*sizeof(int));
 		addS2D(baseDense.values, DBset[i].RIV);
-		baseDense.magnitude = DBset[i].RIV.magnitude;
+		baseDense.magnitude = DBset[i].RIV->magnitude;
 		/* for each previous vector */
 		for(int j=i+1; j<nodeCount; j++){
 				/* get cosine distance to that vector */
-				cosine = cosCompare(&baseDense, &DBset[j].RIV);
+				cosine = RIVcosCompare(&baseDense, DBset[j].RIV);
 
 			/* if this pair is close enough */
 			if(cosine>EPSILON){
