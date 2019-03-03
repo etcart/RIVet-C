@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 
 
@@ -41,6 +42,10 @@
 		#define SORTCACHE
 	#endif
 #endif
+
+
+typedef char RIVword[100];
+
 /* the LEXICON struct will be used similar to a FILE (as a pointer) which
  * contains all metadata that a lexicon needs in order to be read and written to safely*/
 typedef struct{
@@ -101,15 +106,26 @@ int lexPush(LEXICON* lexicon, denseRIV* RIVout);
  */
 denseRIV* lexPull(LEXICON* lexicon, char* word);
 
+/* lexCount returns the number of words in the lexicon */
+int lexCount(LEXICON* lp);
+
+/* lexList returns a list of all words in the lexicon 
+ * when called, there must already be a wordList ready to hold the list
+ */
+int lexList(LEXICON* lp, int wordCount, RIVword list[wordCount]);
+
+/* lexInterrelations returns a square matrix of all cosines of the lexicon
+ * (cosines of vectors with themselves are "identicalAction");
+ */
+int lexInterrelations(LEXICON* lp, int wordCount, float emptyRelations[wordCount][wordCount], float identicalAction);
+
+ /*-----end external functions: here thar be dragons -------*/
+ 
+
 /* cacheCheckOnPush tests the state of this vector in our lexicon cache
  * and returns 1 on "success" indicating cache storage and no need to push to file
  * or returns 0 on "failure" indicating that the vector need be pushed to file 
- */
- 
- 
- /*-----end external functions: here thar be dragons -------*/
- 
- 
+ */ 
 int cacheCheckOnPush(LEXICON* lexicon, denseRIV* RIVout);
 
 /* cacheCheckonPull checks if the word's vector is stored in cache,
@@ -413,9 +429,7 @@ int lexPush(LEXICON* lexicon, denseRIV* RIVout){
 			return 0;
 		}
 	}
-	
 	#endif
-	
 	if(lexicon->flags & WRITEFLAG){
 		/* push to the lexicon */
 		return fLexPush(lexicon, RIVout);
@@ -424,7 +438,6 @@ int lexPush(LEXICON* lexicon, denseRIV* RIVout){
 		free(RIVout);
 		return 0;
 	}
-	
 }
 
 int saturationForStaging(denseRIV* output){
@@ -456,18 +469,14 @@ int saturationForStaging(denseRIV* output){
 		
 		/* act only on non-zeros */
 		if(output->values[i]){
-			
 			/* assign index to locations */
 			*(locations_slider++) = i;
-			
 			/* assign value to values */
 			*(values_slider++) = output->values[i];
-			
 			/* track size of forming sparseRIV */
 			*count += 1;
 		}
 	}
-		
 	/* copy values into slot immediately after locations */
 	memcpy(locations+*count, values, (*count)*sizeof(int));
 	
@@ -612,4 +621,136 @@ int cacheDump(denseRIV* *toDump){
 	
 	return flag;
 }
+
+int lexCount(LEXICON* lp){
+	char path[100];
+	sprintf(path, "%s/.meta-count", lp->lexName);
+	FILE* countFile = fopen(path, "r");
+	if(countFile){
+		int count;
+		fscanf(countFile, "%d", &count);
+		fclose(countFile);
+		return count;
+	}
+
+	DIR *directory;
+    struct dirent *files = NULL;
+	directory = opendir(lp->lexName);
+	int wordCount = 0;
+	while((files=readdir(directory))){
+		if(*(files->d_name) == '.') continue;
+
+		if(files->d_type == DT_DIR){
+			/* the lexicon should not have valid sub-directories */
+			continue;
+		}
+	
+		wordCount++;
+
+	}
+	closedir(directory);
+	countFile = fopen(path, "w");
+	fprintf(countFile, "%d", wordCount);
+	fclose(countFile);
+	return wordCount;
+
+}
+
+int lexList(LEXICON* lp, int wordCount, RIVword list[wordCount]){
+	char path[100];
+	sprintf(path, "%s/.meta-list", lp->lexName);
+	FILE* listFile = fopen(path, "r");
+	if(listFile){
+		for(int i=0; i<wordCount; i++){
+			fscanf(listFile, "%s", list[i]);
+			if(feof(listFile)) return i+1;
+		}
+		return wordCount;
+	}
+	DIR *directory;
+    struct dirent *files = NULL;
+	directory = opendir(lp->lexName);
+	int i=0;
+	while((files=readdir(directory))){
+		if(*(files->d_name) == '.') continue;
+
+		if(files->d_type == DT_DIR){
+			/* the lexicon should not have valid sub-directories */
+			continue;
+		}
+	
+		strcpy(list[i], files->d_name);
+		i++;
+
+	}
+
+	listFile = fopen(path, "w");
+	for(int j=0; j<i; j++){
+		fprintf(listFile, "%s\n", list[j]);
+	}
+	closedir(directory);
+	fclose(listFile);
+	return i;
+
+
+
+
+}
+int lexInterrelations(LEXICON* lp, int wordCount, float emptyRelations[wordCount][wordCount], float identicalAction){
+	char path[100];
+	sprintf(path, "%s/.meta-relations", lp->lexName);
+	FILE* relationsFile = fopen(path, "r");
+	if(relationsFile){
+		for(int i=0; i<wordCount; i++){
+			emptyRelations[i][i] = identicalAction;
+			for(int j=0; j<i; j++){
+				fscanf(relationsFile, "%f", &emptyRelations[i][j]);
+				emptyRelations[j][i] = emptyRelations[i][j];
+			}
+		}
+		return wordCount;
+	}
+	sparseRIV* dataset[wordCount];
+	printf("calculatingThing");
+	DIR *directory;
+    struct dirent *files = NULL;
+	directory = opendir(lp->lexName);
+	int count=0;
+	while((files=readdir(directory))){
+		if(*(files->d_name) == '.') continue;
+
+		if(files->d_type == DT_DIR){
+			/* the lexicon should not have valid sub-directories */
+			continue;
+		}
+		denseRIV* temp = lexPull(lp, files->d_name);
+		if(!temp) continue;
+		dataset[count] = consolidateD2S(temp->values);
+		free(temp);
+		dataset[count]->magnitude = RIVMagnitude(dataset[count]);
+		count++;
+
+	}
+	relationsFile = fopen(path, "w");
+
+	for(int i=0; i<count; i++){
+		denseRIV temp = {0};
+		addS2D(&temp, dataset[i]);
+		temp.magnitude = dataset[i]->magnitude;
+		emptyRelations[i][i] = identicalAction;
+		for(int j=0; j<i; j++){
+			emptyRelations[i][j] = RIVcosCompare(&temp, dataset[j]);
+			emptyRelations[j][i] = emptyRelations[i][j];
+			fprintf(relationsFile, "%f ", emptyRelations[i][j]);
+		}
+		fprintf(relationsFile, "\n");
+	}
+
+
+
+	return count;
+	
+}
+
+
 #endif /* RIV_LEXICON_H */
